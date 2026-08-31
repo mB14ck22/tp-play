@@ -34,8 +34,8 @@ struct RootView: View {
 
             AcidDock(selection: $selection)
                 .frame(height: 52)
-                .ignoresSafeArea(edges: .bottom)
         }
+        .ignoresSafeArea(edges: .bottom)
         .preferredColorScheme(.dark)
         .tint(TPPlayTheme.accent)
     }
