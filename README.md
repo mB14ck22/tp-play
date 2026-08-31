@@ -1,15 +1,47 @@
 
-![chiaki-ng Logo](gui/res/chiaking-logo.svg)
+# TP Play
 
-# [chiaki-ng](https://streetpea.github.io/chiaki-ng/)
+TP Play is an independent, open-source PlayStation Remote Play client for iOS
+and Android. The project starts from the
+[chiaki-ng](https://github.com/streetpea/chiaki-ng) codebase and preserves its
+shared protocol and streaming core while building native mobile applications.
 
-An open source PlayStation remote play project serving as the next-generation of Chiaki with improvements and ongoing support now that the original Chiaki project is in maintenance mode only. [Click here to see the accompanying site for documentation, updates and more](https://streetpea.github.io/chiaki-ng/).
+## Project status
 
-## Discord
-[chiaki-ng community Discord](https://discord.gg/tAMbRuwXDH)
+TP Play is currently at the upstream-baseline stage. The repository contains a
+clean chiaki-ng baseline; TP Play product identifiers, native iOS application,
+and the new Android application architecture have not been implemented yet.
 
-## Disclaimer
-This project is not endorsed or certified by Sony Interactive Entertainment LLC.
+## Technical direction
 
-Chiaki is a Free and Open Source Software Client for PlayStation 4 and PlayStation 5 Remote Play
-for Linux, FreeBSD, OpenBSD, Android, macOS, Windows, Nintendo Switch and potentially even more platforms.
+- Shared protocol and streaming core: C/C++ with CMake
+- Android application: Kotlin and Jetpack Compose
+- Android media path: MediaCodec, SurfaceView/ANativeWindow, and Oboe/AAudio
+- iOS application: Swift with SwiftUI and UIKit where direct touch handling is
+  required
+- iOS media path: VideoToolbox, Metal, and AudioUnit/AVAudioEngine
+- Platform bridge: a narrow, stable C API; JNI on Android and C/Objective-C++
+  bridging on iOS
+
+The video, audio, controller, and touch hot paths stay in native platform APIs.
+UI frameworks do not own or copy decoded video frames.
+
+See [docs/TP_PLAY_ARCHITECTURE.md](docs/TP_PLAY_ARCHITECTURE.md) for repository
+boundaries and the initial implementation plan.
+
+## Upstream
+
+The canonical upstream is
+[streetpea/chiaki-ng](https://github.com/streetpea/chiaki-ng). TP Play keeps the
+upstream Git history so fixes can be reviewed and integrated without treating
+TP Play as a source-code rewrite.
+
+## License and attribution
+
+TP Play is derived from chiaki-ng and Chiaki. Existing copyright, attribution,
+and license notices must be retained. The current upstream baseline is licensed
+under the GNU Affero General Public License v3 with the additional permission
+recorded in [LICENSES/AGPL-3.0-only-OpenSSL.txt](LICENSES/AGPL-3.0-only-OpenSSL.txt).
+
+TP Play is not endorsed or certified by Sony Interactive Entertainment LLC.
+PlayStation and related marks belong to their respective owners.
