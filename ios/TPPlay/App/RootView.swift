@@ -20,19 +20,23 @@ struct RootView: View {
     @State private var selection = AppSection.play
 
     var body: some View {
-        ZStack {
-            TPPlayTheme.canvas.ignoresSafeArea()
-            Group {
-                switch selection {
-                case .play: ConsoleLibraryView()
-                case .news: PlaceholderSectionView(section: "NEWS // FEED", title: "NO FEED CONNECTED", message: "NEWS SOURCES WILL APPEAR HERE.", symbol: "bolt.horizontal.fill")
-                case .library: PlaceholderSectionView(section: "LIBRARY // TROPHIES", title: "TROPHY DATA OFFLINE", message: "CONNECT A DATA SOURCE TO BUILD YOUR LIBRARY.", symbol: "square.grid.2x2.fill")
-                case .home: HomeView()
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                TPPlayTheme.canvas.ignoresSafeArea()
+                Group {
+                    switch selection {
+                    case .play: ConsoleLibraryView()
+                    case .news: PlaceholderSectionView(section: "NEWS // FEED", title: "NO FEED CONNECTED", message: "NEWS SOURCES WILL APPEAR HERE.", symbol: "bolt.horizontal.fill")
+                    case .library: PlaceholderSectionView(section: "LIBRARY // TROPHIES", title: "TROPHY DATA OFFLINE", message: "CONNECT A DATA SOURCE TO BUILD YOUR LIBRARY.", symbol: "square.grid.2x2.fill")
+                    case .home: HomeView()
+                    }
                 }
+                .padding(.bottom, 48)
+
+                AcidDock(selection: $selection, bottomInset: geometry.safeAreaInsets.bottom)
+                    .frame(height: 48 + geometry.safeAreaInsets.bottom)
+                    .ignoresSafeArea(edges: .bottom)
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            AcidDock(selection: $selection).frame(height: 48)
         }
         .preferredColorScheme(.dark)
         .tint(TPPlayTheme.accent)
@@ -41,25 +45,43 @@ struct RootView: View {
 
 private struct AcidDock: View {
     @Binding var selection: AppSection
+    let bottomInset: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(AppSection.allCases, id: \.self) { item in
+            ForEach(Array(AppSection.allCases.enumerated()), id: \.element) { index, item in
                 Button { selection = item } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: item.symbol).font(.system(size: 13, weight: .black))
-                        Text(item.rawValue)
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .tracking(0.5)
+                    VStack(spacing: 0) {
+                        VStack(spacing: 2) {
+                            Image(systemName: item.symbol).font(.system(size: 13, weight: .black))
+                            Text(item.rawValue)
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                .tracking(0.5)
+                        }
+                        .frame(height: 48)
+                        Color.clear.frame(height: bottomInset)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .foregroundStyle(selection == item ? TPPlayTheme.onAccent : TPPlayTheme.primaryText)
+                    .background(selection == item ? TPPlayTheme.accent : TPPlayTheme.surface)
+                    .overlay(alignment: .leading) {
+                        if index > 0 {
+                            Rectangle().fill(TPPlayTheme.violet).frame(width: 1)
+                        }
+                    }
                 }
-                .buttonStyle(AcidButtonStyle(active: selection == item))
+                .buttonStyle(DockPressStyle())
                 .accessibilityAddTraits(selection == item ? .isSelected : [])
             }
         }
         .background(TPPlayTheme.canvas)
         .overlay(alignment: .top) { Rectangle().fill(TPPlayTheme.violet).frame(height: 1) }
+    }
+}
+
+private struct DockPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.62 : 1)
     }
 }
 
