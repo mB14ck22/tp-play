@@ -25,80 +25,111 @@ struct ConsoleRegistrationView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Console") {
-                    LabeledContent("Name", value: console.name)
-                    LabeledContent("Address", value: console.address)
-                }
-
-                Section {
-                    TextField("Base64 account ID", text: $accountID)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    SecureField("8-digit PIN", text: $pin)
-                        .keyboardType(.numberPad)
-                } header: {
-                    Text("Remote Play registration")
-                } footer: {
-                    Text("On the console, open Settings → System → Remote Play → Link Device. Enter the displayed PIN and your PSN account ID encoded as Base64.")
-                }
-
-                Section {
-                    Button("Sign in to PlayStation", systemImage: "safari") {
-                        UIApplication.shared.open(PSNAccountIDResolver.loginURL)
+        ZStack {
+            TPPlayTheme.canvas.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack {
+                        Text("LINK // \(console.isPS5 ? "PS5" : "PS4")")
+                            .font(.system(size: 13, weight: .black, design: .monospaced))
+                            .foregroundStyle(TPPlayTheme.accent)
+                        Spacer()
+                        Button("X") { dismiss() }
+                            .frame(width: 42, height: 42)
+                            .buttonStyle(AcidButtonStyle())
                     }
-                    TextField("Paste the redirect URL", text: $redirectURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Get account ID") {
-                        Task {
-                            if let value = await psnAccount.resolve(from: redirectURL) {
-                                accountID = value
+
+                    infoPanel
+                    fieldBlock("ACCOUNT ID // BASE64") {
+                        TextField("BASE64 ACCOUNT ID", text: $accountID)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(AcidFieldStyle())
+                    }
+                    fieldBlock("REMOTE PLAY // 8-DIGIT PIN") {
+                        SecureField("00000000", text: $pin)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(AcidFieldStyle())
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("PSN ACCOUNT LOOKUP").registrationLabel()
+                        Button("OPEN PLAYSTATION SIGN-IN >") {
+                            UIApplication.shared.open(PSNAccountIDResolver.loginURL)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .buttonStyle(AcidButtonStyle())
+                        TextField("PASTE FINAL REDIRECT URL", text: $redirectURL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(AcidFieldStyle())
+                        Button("GET ACCOUNT ID") {
+                            Task {
+                                if let value = await psnAccount.resolve(from: redirectURL) { accountID = value }
                             }
                         }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .buttonStyle(AcidButtonStyle(active: true))
+                        .disabled(redirectURL.isEmpty || psnAccount.isLoading)
+                        if psnAccount.isLoading {
+                            HStack { ProgressView().tint(TPPlayTheme.accent); Text("RETRIEVING ACCOUNT ID...") }
+                                .registrationLabel()
+                        }
+                        if let error = psnAccount.errorMessage {
+                            Text("ERROR // \(error)")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(TPPlayTheme.danger)
+                        }
+                        Text("YOUR PASSWORD IS ENTERED ONLY ON SONY'S WEBSITE.")
+                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .foregroundStyle(TPPlayTheme.secondaryText)
                     }
-                    .disabled(redirectURL.isEmpty || psnAccount.isLoading)
+                    .padding(14)
+                    .background(TPPlayTheme.surface)
+                    .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
 
-                    if psnAccount.isLoading {
-                        HStack { ProgressView(); Text("Retrieving account ID…") }
-                    }
-                    if let error = psnAccount.errorMessage {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                    }
-                } header: {
-                    Text("Need your account ID?")
-                } footer: {
-                    Text("Sign in, copy the final redirect page URL from Safari, return here, and paste it above. Your password is entered only on Sony's website.")
-                }
-
-                Section {
                     registrationStatus
                     if registration.state == .succeeded {
-                        Button("Done") { dismiss() }
+                        Button("DONE >") { dismiss() }
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .buttonStyle(AcidButtonStyle(active: true))
                     } else {
-                        Button("Link console") {
+                        Button("LINK CONSOLE >") {
                             guard let accountID = decodedAccountID, let pin = validPIN else { return }
                             registration.start(console: console, accountID: accountID, pin: pin, store: store)
                         }
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .buttonStyle(AcidButtonStyle(active: true))
                         .disabled(decodedAccountID == nil || validPIN == nil || registration.state == .registering)
                     }
-
                     if registration.state == .registering {
-                        Button("Cancel", role: .cancel) {
-                            registration.cancel()
-                        }
+                        Button("CANCEL") { registration.cancel() }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .buttonStyle(AcidButtonStyle())
                     }
                 }
+                .padding(20)
             }
-            .navigationTitle("Register \(console.isPS5 ? "PS5" : "PS4")")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var infoPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack { Text("CONSOLE"); Spacer(); Text(console.name.uppercased()) }
+            HStack { Text("ADDRESS"); Spacer(); Text(console.address) }
+        }
+        .font(.system(size: 10, weight: .bold, design: .monospaced))
+        .foregroundStyle(TPPlayTheme.primaryText)
+        .padding(14)
+        .background(TPPlayTheme.surface)
+        .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+    }
+
+    private func fieldBlock<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).registrationLabel()
+            content()
         }
     }
 
@@ -109,18 +140,25 @@ struct ConsoleRegistrationView: View {
             EmptyView()
         case .registering:
             HStack {
-                ProgressView()
-                Text("Registering with the console…")
+                ProgressView().tint(TPPlayTheme.accent)
+                Text("LINKING WITH CONSOLE...")
             }
         case .succeeded:
-            Label("Console registered and keys saved securely.", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+            Text("LINKED // KEYS SAVED SECURELY")
+                .foregroundStyle(TPPlayTheme.accent)
         case .canceled:
-            Label("Registration canceled.", systemImage: "xmark.circle")
+            Text("REGISTRATION CANCELED")
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
+            Text("ERROR // \(message)").foregroundStyle(TPPlayTheme.danger)
         }
+    }
+}
+
+private extension View {
+    func registrationLabel() -> some View {
+        font(.system(size: 9, weight: .bold, design: .monospaced))
+            .tracking(0.7)
+            .foregroundStyle(TPPlayTheme.secondaryText)
     }
 }
 

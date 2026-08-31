@@ -17,134 +17,130 @@ struct ConsoleLibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                TPPlayTheme.canvas.ignoresSafeArea()
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 32) {
-                        hero
-                        if !registeredConsoles.consoles.isEmpty { consoleSection }
-                        nearbySection
-                        if let storageError = registeredConsoles.storageError {
-                            Label(storageError, systemImage: "key.slash")
-                                .font(.footnote)
-                                .foregroundStyle(.red)
-                        }
+        ZStack {
+            TPPlayTheme.canvas.ignoresSafeArea()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    topBar
+                    hero
+                    if !registeredConsoles.consoles.isEmpty { consoleSection }
+                    nearbySection
+                    if let storageError = registeredConsoles.storageError {
+                        Text("KEYCHAIN ERROR // \(storageError)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(TPPlayTheme.danger)
                     }
-                    .frame(maxWidth: 720, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .padding(.bottom, 44)
                 }
-                .refreshable { discovery.restart() }
+                .frame(maxWidth: 720, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
-            .navigationTitle("TP Play")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Add console", systemImage: "plus") { showingManualConsole = true }
-                }
-            }
-            .sheet(item: $consoleToRegister) { console in
-                ConsoleRegistrationView(console: console, store: registeredConsoles)
-            }
-            .sheet(isPresented: $showingManualConsole) {
-                ManualConsoleView { address, isPS5 in
-                    discovery.addManual(address: address, isPS5: isPS5)
-                    showingManualConsole = false
-                }
-            }
-            .fullScreenCover(item: $consoleToPlay) { console in
-                RemotePlayView(console: console, configuration: streamConfiguration)
-            }
-            .confirmationDialog(
-                "Remove this console?",
-                isPresented: Binding(
-                    get: { consoleToRemove != nil },
-                    set: { if !$0 { consoleToRemove = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("Remove console", role: .destructive) {
-                    guard let consoleToRemove else { return }
-                    registeredConsoles.remove(consoleToRemove)
-                    self.consoleToRemove = nil
-                }
-                Button("Cancel", role: .cancel) { consoleToRemove = nil }
-            } message: {
-                Text("You will need to link this PlayStation again before using Remote Play.")
-            }
-            .alert("Could not wake console", isPresented: Binding(
-                get: { wakeError != nil },
-                set: { if !$0 { wakeError = nil } }
-            )) {
-                Button("OK", role: .cancel) { wakeError = nil }
-            } message: {
-                Text(wakeError ?? "Unknown error")
+            .refreshable { discovery.restart() }
+        }
+        .fullScreenCover(item: $consoleToRegister) { console in
+            ConsoleRegistrationView(console: console, store: registeredConsoles)
+        }
+        .fullScreenCover(isPresented: $showingManualConsole) {
+            ManualConsoleView { address, isPS5 in
+                discovery.addManual(address: address, isPS5: isPS5)
+                showingManualConsole = false
             }
         }
+        .fullScreenCover(item: $consoleToPlay) { console in
+            RemotePlayView(console: console, configuration: streamConfiguration)
+        }
+        .confirmationDialog("REMOVE CONSOLE?", isPresented: Binding(
+            get: { consoleToRemove != nil },
+            set: { if !$0 { consoleToRemove = nil } }
+        ), titleVisibility: .visible) {
+            Button("Remove console", role: .destructive) {
+                guard let consoleToRemove else { return }
+                registeredConsoles.remove(consoleToRemove)
+                self.consoleToRemove = nil
+            }
+            Button("Cancel", role: .cancel) { consoleToRemove = nil }
+        } message: {
+            Text("The console must be linked again before Remote Play can start.")
+        }
+        .alert("WAKE FAILED", isPresented: Binding(
+            get: { wakeError != nil },
+            set: { if !$0 { wakeError = nil } }
+        )) {
+            Button("OK", role: .cancel) { wakeError = nil }
+        } message: { Text(wakeError ?? "Unknown error") }
     }
 
     private var streamConfiguration: StreamConfiguration {
         let height = UInt32(streamResolution)
-        return StreamConfiguration(
-            width: height == 1080 ? 1920 : 1280,
-            height: height,
-            fps: UInt32(streamFPS),
-            bitrate: UInt32(streamBitrate)
-        )
+        return StreamConfiguration(width: height == 1080 ? 1920 : 1280, height: height, fps: UInt32(streamFPS), bitrate: UInt32(streamBitrate))
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            HStack(spacing: 7) {
+                Rectangle()
+                    .fill(discovery.errorMessage == nil ? TPPlayTheme.accent : TPPlayTheme.danger)
+                    .frame(width: 6, height: 6)
+                Text("LOCAL")
+            }
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .tracking(0.8)
+            .foregroundStyle(TPPlayTheme.primaryText)
+            .frame(width: 82, height: 38)
+            .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+
+            Button { showingManualConsole = true } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .black))
+                    .frame(width: 38, height: 38)
+            }
+            .buttonStyle(AcidButtonStyle(active: true))
+            .accessibilityLabel("Add console")
+        }
     }
 
     private var hero: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "playstation.logo")
-                .font(.system(size: 25, weight: .semibold))
-                .foregroundStyle(TPPlayTheme.accent)
-                .frame(width: 52, height: 52)
-                .background(TPPlayTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Remote Play").font(.title2.weight(.bold))
-                Text("Your PlayStation, on this screen.")
-                    .font(.subheadline)
-                    .foregroundStyle(TPPlayTheme.secondaryText)
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            Text("READY TO PLAY")
+                .font(.system(size: 30, weight: .black, design: .monospaced))
+                .tracking(-1)
+                .foregroundStyle(TPPlayTheme.primaryText)
+            Text("SELECT A CONSOLE. START A LOCAL SESSION.")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(TPPlayTheme.secondaryText)
         }
     }
 
     private var consoleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             sectionHeader("MY CONSOLES", detail: "\(registeredConsoles.consoles.count)")
             ForEach(registeredConsoles.consoles) { registered in
                 let nearby = discovery.console(matching: registered)
-                RegisteredConsoleCard(
-                    console: registered,
-                    nearby: nearby,
-                    onPlay: {
-                        let current = registered.updatedAddress(nearby?.address)
-                        registeredConsoles.updateAddressIfNeeded(current)
-                        if nearby?.state == .standby || nearby == nil {
-                            wakeError = discovery.wake(current)
-                        } else {
-                            consoleToPlay = current
-                        }
-                    },
-                    onRemove: { consoleToRemove = registered }
-                )
+                RegisteredConsoleCard(console: registered, nearby: nearby, onPlay: {
+                    let current = registered.updatedAddress(nearby?.address)
+                    registeredConsoles.updateAddressIfNeeded(current)
+                    if nearby?.state == .standby || nearby == nil {
+                        wakeError = discovery.wake(current)
+                    } else {
+                        consoleToPlay = current
+                    }
+                }, onRemove: { consoleToRemove = registered })
             }
         }
     }
 
-    @ViewBuilder
-    private var nearbySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("NEARBY", detail: discovery.isSearching ? "SEARCHING" : nil)
+    @ViewBuilder private var nearbySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("LOCAL NETWORK", detail: discovery.isSearching ? "SCANNING" : "IDLE")
             if let errorMessage = discovery.errorMessage {
-                StatePanel(symbol: "wifi.exclamationmark", title: "Local network unavailable", message: errorMessage, actionTitle: "Try again", action: discovery.restart)
+                StatePanel(title: "NETWORK UNAVAILABLE", message: errorMessage, actionTitle: "RETRY", action: discovery.restart)
             } else if unregisteredConsoles.isEmpty {
                 StatePanel(
-                    symbol: registeredConsoles.consoles.isEmpty ? "gamecontroller" : "dot.radiowaves.left.and.right",
-                    title: registeredConsoles.consoles.isEmpty ? "Looking for your PlayStation" : "No new consoles found",
-                    message: "Turn on Remote Play on your PS4 or PS5 and keep it on the same Wi-Fi network as this iPhone.",
+                    title: registeredConsoles.consoles.isEmpty ? "SEARCHING FOR CONSOLE" : "NO NEW CONSOLES",
+                    message: "ENABLE REMOTE PLAY AND KEEP THE CONSOLE ON THIS LOCAL NETWORK.",
                     actionTitle: nil,
                     action: nil
                 )
@@ -156,19 +152,15 @@ struct ConsoleLibraryView: View {
         }
     }
 
-    private func sectionHeader(_ title: String, detail: String?) -> some View {
+    private func sectionHeader(_ title: String, detail: String) -> some View {
         HStack {
-            Text(title)
-                .font(.caption.weight(.bold))
-                .tracking(1.3)
-                .foregroundStyle(TPPlayTheme.tertiaryText)
+            Text("// \(title)")
             Spacer()
-            if let detail {
-                Text(detail)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(TPPlayTheme.tertiaryText)
-            }
+            Text(detail)
         }
+        .font(.system(size: 9, weight: .bold, design: .monospaced))
+        .tracking(1)
+        .foregroundStyle(TPPlayTheme.accent)
     }
 }
 
@@ -179,61 +171,56 @@ private struct RegisteredConsoleCard: View {
     let onRemove: () -> Void
 
     var body: some View {
-        Button(action: onPlay) {
-            HStack(spacing: 16) {
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
                 ConsoleGlyph(isPS5: console.isPS5)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(console.nickname)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+                    Text(console.nickname.uppercased())
+                        .font(.system(size: 16, weight: .black, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.primaryText)
                         .lineLimit(1)
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(nearby == nil ? TPPlayTheme.tertiaryText : TPPlayTheme.accent)
-                            .frame(width: 7, height: 7)
-                        Text(statusText)
-                            .font(.caption)
-                            .foregroundStyle(TPPlayTheme.secondaryText)
-                            .lineLimit(1)
-                    }
+                    Text(statusText.uppercased())
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(nearby == nil ? TPPlayTheme.secondaryText : TPPlayTheme.accent)
+                        .lineLimit(1)
+                    Text(console.address)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.tertiaryText)
                 }
-                Spacer(minLength: 8)
-                Image(systemName: canStartSession ? "play.fill" : "power")
-                    .font(.headline)
-                    .foregroundStyle(TPPlayTheme.onAccent)
-                    .frame(width: 44, height: 44)
-                    .background(TPPlayTheme.accent, in: Circle())
-            }
-            .padding(16)
-            .background(TPPlayTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(alignment: .topTrailing) {
+                Spacer(minLength: 4)
                 Menu {
                     Button("Remove console", systemImage: "trash", role: .destructive, action: onRemove)
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(TPPlayTheme.secondaryText)
-                        .frame(width: 44, height: 44)
+                        .foregroundStyle(TPPlayTheme.primaryText)
+                        .frame(width: 36, height: 36)
+                        .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
                 }
-                .offset(x: -58, y: 16)
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(TPPlayTheme.border, lineWidth: 1)
+            .padding(14)
+
+            Button(action: onPlay) {
+                HStack {
+                    Text(canStartSession ? "START SESSION" : "WAKE CONSOLE")
+                    Spacer()
+                    Text(">")
+                }
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, minHeight: 44)
             }
+            .buttonStyle(AcidButtonStyle(active: true))
         }
-        .buttonStyle(ConsolePressStyle())
-        .accessibilityHint(canStartSession ? "Starts Remote Play" : "Sends a wake request")
+        .background(TPPlayTheme.surface)
+        .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
     }
 
     private var canStartSession: Bool { nearby?.state == .ready || nearby?.state == .unknown }
-
     private var statusText: String {
-        guard let nearby else { return "Saved" }
+        guard let nearby else { return "SAVED // OFFLINE" }
         switch nearby.state {
-        case .ready: return nearby.runningAppName ?? "Ready to play"
-        case .standby: return "Rest mode"
-        case .unknown: return "Available"
+        case .ready: return nearby.runningAppName ?? "READY"
+        case .standby: return "REST MODE"
+        case .unknown: return "AVAILABLE"
         }
     }
 }
@@ -244,29 +231,24 @@ private struct NearbyConsoleCard: View {
 
     var body: some View {
         Button(action: onRegister) {
-            HStack(spacing: 16) {
+            HStack(spacing: 14) {
                 ConsoleGlyph(isPS5: console.isPS5)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(console.name).font(.headline).foregroundStyle(.primary)
-                    Text("\(console.isPS5 ? "PS5" : "PS4")  ·  \(console.address)")
-                        .font(.caption)
+                    Text(console.name.uppercased()).font(.system(size: 14, weight: .black, design: .monospaced))
+                    Text("\(console.isPS5 ? "PS5" : "PS4") // \(console.address)")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundStyle(TPPlayTheme.secondaryText)
                 }
                 Spacer()
-                Text("LINK")
-                    .font(.caption.weight(.bold))
-                    .tracking(0.6)
+                Text("LINK >")
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
                     .foregroundStyle(TPPlayTheme.accent)
-                    .frame(minWidth: 52, minHeight: 44)
             }
-            .padding(16)
-            .background(TPPlayTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(TPPlayTheme.border, lineWidth: 1)
-            }
+            .foregroundStyle(TPPlayTheme.primaryText)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 76)
         }
-        .buttonStyle(ConsolePressStyle())
+        .buttonStyle(AcidButtonStyle())
     }
 }
 
@@ -274,58 +256,43 @@ private struct ConsoleGlyph: View {
     let isPS5: Bool
     var body: some View {
         Image(systemName: isPS5 ? "playstation.logo" : "gamecontroller.fill")
-            .font(.title2.weight(.medium))
+            .font(.system(size: 22, weight: .black))
             .foregroundStyle(TPPlayTheme.accent)
             .frame(width: 48, height: 48)
-            .background(TPPlayTheme.canvas, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(TPPlayTheme.canvas)
+            .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
     }
 }
 
 private struct StatePanel: View {
-    let symbol: String
     let title: String
     let message: String
     let actionTitle: String?
     let action: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(TPPlayTheme.accent)
-            VStack(spacing: 6) {
-                Text(title).font(.headline)
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(TPPlayTheme.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 14, weight: .black, design: .monospaced))
+                .foregroundStyle(TPPlayTheme.primaryText)
+            Text(message)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .tracking(0.5)
+                .foregroundStyle(TPPlayTheme.secondaryText)
+                .multilineTextAlignment(.center)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(.bordered)
-                    .tint(TPPlayTheme.accent)
+                    .frame(width: 120, height: 42)
+                    .buttonStyle(AcidButtonStyle(active: true))
             } else {
                 ProgressView().tint(TPPlayTheme.accent)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 28)
-        .background(TPPlayTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(TPPlayTheme.border, lineWidth: 1)
-        }
-    }
-}
-
-private struct ConsolePressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 26)
+        .background(TPPlayTheme.surface)
+        .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
     }
 }
 
@@ -336,37 +303,54 @@ private struct ManualConsoleView: View {
     let onAdd: (String, Bool) -> Void
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Console type") {
-                    Picker("Console", selection: $isPS5) {
-                        Text("PlayStation 5").tag(true)
-                        Text("PlayStation 4").tag(false)
-                    }
-                    .pickerStyle(.segmented)
+        ZStack {
+            TPPlayTheme.canvas.ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("ADD // CONSOLE")
+                        .font(.system(size: 13, weight: .black, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.accent)
+                    Spacer()
+                    Button("X") { dismiss() }
+                        .frame(width: 42, height: 42)
+                        .buttonStyle(AcidButtonStyle())
                 }
-                Section {
-                    TextField("IP address or hostname", text: $address)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("Network address")
-                } footer: {
-                    Text("Use this when automatic discovery cannot see a console on your local network.")
+                Text("CONSOLE TYPE").acidLabel()
+                HStack(spacing: 8) {
+                    typeButton("PLAYSTATION 5", value: true)
+                    typeButton("PLAYSTATION 4", value: false)
                 }
+                Text("NETWORK ADDRESS").acidLabel()
+                TextField("IP ADDRESS OR HOSTNAME", text: $address)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(AcidFieldStyle())
+                Text("USE MANUAL ENTRY WHEN LOCAL DISCOVERY CANNOT SEE THE CONSOLE.")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(TPPlayTheme.secondaryText)
+                Spacer()
+                Button("ADD CONSOLE >") { onAdd(address, isPS5) }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .buttonStyle(AcidButtonStyle(active: true))
+                    .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .navigationTitle("Add console")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { onAdd(address, isPS5) }
-                        .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
+            .padding(20)
         }
+        .preferredColorScheme(.dark)
+    }
+
+    private func typeButton(_ label: String, value: Bool) -> some View {
+        Button(label) { isPS5 = value }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(AcidButtonStyle(active: isPS5 == value))
+    }
+}
+
+private extension View {
+    func acidLabel() -> some View {
+        font(.system(size: 10, weight: .bold, design: .monospaced))
+            .tracking(0.8)
+            .foregroundStyle(TPPlayTheme.secondaryText)
     }
 }
 

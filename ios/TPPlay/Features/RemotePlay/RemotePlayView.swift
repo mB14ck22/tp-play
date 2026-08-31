@@ -21,8 +21,12 @@ struct RemotePlayView: View {
 
             if case .connecting = session.state {
                 ProgressView("Connecting…")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(TPPlayTheme.primaryText)
+                    .tint(TPPlayTheme.accent)
                     .padding(18)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    .background(TPPlayTheme.surface.opacity(0.92))
+                    .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
             }
 
             if case .ended(let reason) = session.state {
@@ -82,7 +86,8 @@ struct RemotePlayView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .background(TPPlayTheme.surface.opacity(0.82))
+                        .overlay { Rectangle().stroke(TPPlayTheme.accent, lineWidth: 1) }
                 }
                 Spacer()
             }
@@ -152,11 +157,12 @@ private struct TouchpadControl: View {
 
     var body: some View {
         GeometryReader { geometry in
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.ultraThinMaterial)
+            Rectangle()
+                .fill(TPPlayTheme.surface.opacity(0.72))
+                .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
                 .overlay {
                     Text("TOUCHPAD")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .tracking(0.8)
                         .foregroundStyle(.white.opacity(0.45))
                 }
@@ -191,10 +197,11 @@ private struct ControllerTextButton: View {
 
     var body: some View {
         Text(label)
-            .font(.caption2.weight(.bold))
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
             .frame(minWidth: 42, minHeight: 34)
             .padding(.horizontal, 4)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(TPPlayTheme.surface.opacity(0.72))
+            .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
             .scaleEffect(pressed ? 0.92 : 1)
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -218,12 +225,13 @@ private struct VirtualStick: View {
     @State private var offset: CGSize = .zero
 
     var body: some View {
-        Circle()
-            .fill(.ultraThinMaterial)
+        Rectangle()
+            .fill(TPPlayTheme.surface.opacity(0.66))
             .frame(width: 104, height: 104)
+            .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
             .overlay {
-                Circle()
-                    .fill(.white.opacity(0.25))
+                Rectangle()
+                    .fill(TPPlayTheme.accent.opacity(0.38))
                     .frame(width: 48, height: 48)
                     .offset(offset)
             }
@@ -257,7 +265,8 @@ private struct ControllerButton: View {
         Image(systemName: symbol)
             .font(.title3.weight(.bold))
             .frame(width: 54, height: 54)
-            .background(.ultraThinMaterial, in: Circle())
+            .background(TPPlayTheme.surface.opacity(0.72))
+            .overlay { Rectangle().stroke(TPPlayTheme.accent, lineWidth: 1) }
             .scaleEffect(pressed ? 0.9 : 1)
             .gesture(
                 DragGesture(minimumDistance: 0)
