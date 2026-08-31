@@ -14,6 +14,13 @@
 		100000000000000000000005 /* TPPlayCore.c in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* TPPlayCore.c */; };
 		100000000000000000000006 /* ConsoleDiscoveryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000B /* ConsoleDiscoveryStore.swift */; };
 		100000000000000000000007 /* libTPPlayCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000C /* libTPPlayCore.a */; };
+		100000000000000000000008 /* RegisteredConsoleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000D /* RegisteredConsoleStore.swift */; };
+		100000000000000000000009 /* ConsoleRegistrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000E /* ConsoleRegistrationView.swift */; };
+		10000000000000000000000A /* VideoDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000F /* VideoDecoder.swift */; };
+		10000000000000000000000B /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000010 /* AudioPlayer.swift */; };
+		10000000000000000000000C /* MetalVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* MetalVideoView.swift */; };
+		10000000000000000000000D /* RemotePlaySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* RemotePlaySession.swift */; };
+		10000000000000000000000E /* RemotePlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* RemotePlayView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,6 +36,13 @@
 		20000000000000000000000A /* TPPlay-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TPPlay-Bridging-Header.h"; sourceTree = "<group>"; };
 		20000000000000000000000B /* ConsoleDiscoveryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleDiscoveryStore.swift; sourceTree = "<group>"; };
 		20000000000000000000000C /* libTPPlayCore.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = .build/iphoneos/libTPPlayCore.a; sourceTree = "<group>"; };
+		20000000000000000000000D /* RegisteredConsoleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegisteredConsoleStore.swift; sourceTree = "<group>"; };
+		20000000000000000000000E /* ConsoleRegistrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleRegistrationView.swift; sourceTree = "<group>"; };
+		20000000000000000000000F /* VideoDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoDecoder.swift; sourceTree = "<group>"; };
+		200000000000000000000010 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
+		200000000000000000000011 /* MetalVideoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalVideoView.swift; sourceTree = "<group>"; };
+		200000000000000000000012 /* RemotePlaySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePlaySession.swift; sourceTree = "<group>"; };
+		200000000000000000000013 /* RemotePlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePlayView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -93,6 +107,8 @@
 			isa = PBXGroup;
 			children = (
 				300000000000000000000007 /* ConsoleLibrary */,
+				30000000000000000000000A /* Registration */,
+				30000000000000000000000C /* RemotePlay */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -110,8 +126,28 @@
 			children = (
 				200000000000000000000007 /* README.md */,
 				300000000000000000000009 /* Core */,
+				30000000000000000000000B /* Streaming */,
 			);
 			path = Platform;
+			sourceTree = "<group>";
+		};
+		30000000000000000000000B /* Streaming */ = {
+			isa = PBXGroup;
+			children = (
+				20000000000000000000000F /* VideoDecoder.swift */,
+				200000000000000000000010 /* AudioPlayer.swift */,
+				200000000000000000000011 /* MetalVideoView.swift */,
+				200000000000000000000012 /* RemotePlaySession.swift */,
+			);
+			path = Streaming;
+			sourceTree = "<group>";
+		};
+		30000000000000000000000C /* RemotePlay */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000013 /* RemotePlayView.swift */,
+			);
+			path = RemotePlay;
 			sourceTree = "<group>";
 		};
 		300000000000000000000009 /* Core */ = {
@@ -121,8 +157,17 @@
 				200000000000000000000009 /* TPPlayCore.c */,
 				20000000000000000000000A /* TPPlay-Bridging-Header.h */,
 				20000000000000000000000B /* ConsoleDiscoveryStore.swift */,
+				20000000000000000000000D /* RegisteredConsoleStore.swift */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		30000000000000000000000A /* Registration */ = {
+			isa = PBXGroup;
+			children = (
+				20000000000000000000000E /* ConsoleRegistrationView.swift */,
+			);
+			path = Registration;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -218,6 +263,13 @@
 				100000000000000000000004 /* ConsoleLibraryView.swift in Sources */,
 				100000000000000000000005 /* TPPlayCore.c in Sources */,
 				100000000000000000000006 /* ConsoleDiscoveryStore.swift in Sources */,
+				100000000000000000000008 /* RegisteredConsoleStore.swift in Sources */,
+				100000000000000000000009 /* ConsoleRegistrationView.swift in Sources */,
+				10000000000000000000000A /* VideoDecoder.swift in Sources */,
+				10000000000000000000000B /* AudioPlayer.swift in Sources */,
+				10000000000000000000000C /* MetalVideoView.swift in Sources */,
+				10000000000000000000000D /* RemotePlaySession.swift in Sources */,
+				10000000000000000000000E /* RemotePlayView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

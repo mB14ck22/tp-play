@@ -2,6 +2,9 @@ import SwiftUI
 
 struct ConsoleLibraryView: View {
     @StateObject private var discovery = ConsoleDiscoveryStore()
+    @StateObject private var registeredConsoles = RegisteredConsoleStore()
+    @State private var consoleToRegister: DiscoveredConsole?
+    @State private var consoleToPlay: RegisteredConsole?
 
     var body: some View {
         NavigationStack {
@@ -50,7 +53,12 @@ struct ConsoleLibraryView: View {
         } else {
             VStack(spacing: 12) {
                 ForEach(discovery.consoles) { console in
-                    ConsoleCard(console: console)
+                    ConsoleCard(
+                        console: console,
+                        registeredConsole: registeredConsoles.registration(for: console),
+                        onRegister: { consoleToRegister = console },
+                        onPlay: { registered in consoleToPlay = registered }
+                    )
                 }
             }
         }
@@ -94,14 +102,24 @@ struct ConsoleLibraryView: View {
 
             StatusRow(title: "Native SwiftUI application", isReady: true)
             StatusRow(title: "Chiaki core \(discovery.coreVersion) and LAN discovery", isReady: true)
+            StatusRow(title: "Console registration and secure key storage", isReady: true)
             StatusRow(title: "VideoToolbox and Metal", isReady: false)
             StatusRow(title: "Audio and controller input", isReady: false)
+        }
+        .sheet(item: $consoleToRegister) { console in
+            ConsoleRegistrationView(console: console, store: registeredConsoles)
+        }
+        .fullScreenCover(item: $consoleToPlay) { console in
+            RemotePlayView(console: console)
         }
     }
 }
 
 private struct ConsoleCard: View {
     let console: DiscoveredConsole
+    let registeredConsole: RegisteredConsole?
+    let onRegister: () -> Void
+    let onPlay: (RegisteredConsole) -> Void
 
     var body: some View {
         HStack(spacing: 16) {
@@ -130,6 +148,17 @@ private struct ConsoleCard: View {
                 .fill(console.state == .ready ? Color.green : Color.orange)
                 .frame(width: 9, height: 9)
                 .accessibilityLabel(console.state == .ready ? "Ready" : "Standby")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if let registeredConsole { onPlay(registeredConsole) } else { onRegister() }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            Text(registeredConsole == nil ? "Register" : "Play")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(registeredConsole == nil ? TPPlayTheme.accent : Color.green)
+                .padding(.trailing, 16)
+                .padding(.bottom, 10)
         }
         .padding(16)
         .background(TPPlayTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

@@ -110,7 +110,7 @@ libtool -static -o "$output_dir/libTPPlayCore.a" \
 	"$build_dir/third-party/libgf_complete.a"
 
 mkdir -p "$output_dir/include/chiaki"
-cp "$repo_dir/lib/include/chiaki/"*.h "$output_dir/include/chiaki/"
+cp -R "$repo_dir/lib/include/chiaki/." "$output_dir/include/chiaki/"
 cp "$build_dir/lib/include/chiaki/config.h" "$output_dir/include/chiaki/config.h"
 
 echo "Built $output_dir/libTPPlayCore.a"

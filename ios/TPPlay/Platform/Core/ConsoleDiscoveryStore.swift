@@ -13,6 +13,7 @@ struct DiscoveredConsole: Identifiable, Equatable, Sendable {
     let systemVersion: String
     let runningAppName: String?
     let isPS5: Bool
+    let target: Int32
     let state: State
 }
 
@@ -80,6 +81,7 @@ private let tpPlayDiscoveryCallback: @convention(c) (
                     systemVersion: string(host.system_version),
                     runningAppName: runningApp,
                     isPS5: host.is_ps5,
+                    target: Int32(host.target),
                     state: state
                 )
             )
