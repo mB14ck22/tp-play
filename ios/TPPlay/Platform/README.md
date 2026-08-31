@@ -1,12 +1,10 @@
 # iOS platform adapters
 
-This directory is reserved for concrete integrations that sit outside SwiftUI:
+This directory contains concrete integrations that sit outside SwiftUI:
 
-- `Bridge/`: stable C API and Objective-C++ adaptation where required
-- `Video/`: VideoToolbox decode and Metal presentation
-- `Audio/`: AudioUnit or AVAudioEngine output selected by measured latency
-- `Input/`: GameController, CoreMotion, and touch ownership
-- `Network/`: local-network permission and platform reachability adaptation
+- `Core/`: stable C API, discovery, registration, session, and secure host storage
+- `Streaming/`: VideoToolbox decode, Metal presentation, and AVAudioEngine output
+- `Features/RemotePlay/`: GameController and touch input ownership
 
-These directories will be introduced with their first implementation. No media
-or session capability is represented as complete by this placeholder.
+Platform capabilities are exposed to Swift through the narrow C bridge in
+`Core/TPPlayCore.h`; media payloads remain outside SwiftUI observable state.

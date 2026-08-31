@@ -67,6 +67,9 @@ typedef struct TPPlayControllerState {
 	int16_t left_y;
 	int16_t right_x;
 	int16_t right_y;
+	uint16_t touch_x;
+	uint16_t touch_y;
+	bool touch_active;
 } TPPlayControllerState;
 
 typedef void (*TPPlayDiscoveryCallback)(const TPPlayHost *hosts, size_t count, void *context);
@@ -74,6 +77,7 @@ typedef void (*TPPlayDiscoveryCallback)(const TPPlayHost *hosts, size_t count, v
 const char *tp_play_core_version(void);
 TPPlayDiscovery *tp_play_discovery_create(TPPlayDiscoveryCallback callback, void *context, int *error_code);
 void tp_play_discovery_destroy(TPPlayDiscovery *discovery);
+int tp_play_console_wake(const char *host, uint64_t credential, bool ps5);
 TPPlayRegistration *tp_play_registration_create(
 	int target,
 	const char *host,

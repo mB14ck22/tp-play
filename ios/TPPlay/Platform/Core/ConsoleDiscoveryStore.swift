@@ -23,12 +23,63 @@ final class ConsoleDiscoveryStore: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     nonisolated(unsafe) private var discovery: OpaquePointer?
+    private var manualConsoles: [DiscoveredConsole] = []
+
+    var isSearching: Bool { discovery != nil }
 
     var coreVersion: String {
         String(cString: tp_play_core_version())
     }
 
     init() {
+        start()
+    }
+
+    func restart() {
+        tp_play_discovery_destroy(discovery)
+        discovery = nil
+        errorMessage = nil
+        start()
+    }
+
+    func console(matching registered: RegisteredConsole) -> DiscoveredConsole? {
+        consoles.first { console in
+            console.name == registered.nickname || console.address == registered.address
+        }
+    }
+
+    func wake(_ console: RegisteredConsole) -> String? {
+        let bytes = console.registrationKey.prefix { $0 != 0 }
+        guard let text = String(data: Data(bytes), encoding: .utf8),
+              let credential = UInt64(text, radix: 16) else {
+            return "The saved wake credential is invalid. Link this console again."
+        }
+        let result = console.address.withCString {
+            tp_play_console_wake($0, credential, console.target >= 1_000_000)
+        }
+        return result == 0 ? nil : "Wake request failed (core error \(result))."
+    }
+
+    func addManual(address: String, isPS5: Bool) {
+        let cleanAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanAddress.isEmpty else { return }
+        manualConsoles.removeAll { $0.address.caseInsensitiveCompare(cleanAddress) == .orderedSame }
+        manualConsoles.append(
+            DiscoveredConsole(
+                id: "manual:\(cleanAddress)",
+                name: isPS5 ? "PlayStation 5" : "PlayStation 4",
+                address: cleanAddress,
+                systemVersion: "",
+                runningAppName: nil,
+                isPS5: isPS5,
+                target: isPS5 ? 1_000_100 : 1_000,
+                state: .unknown
+            )
+        )
+        merge(network: consoles.filter { !$0.id.hasPrefix("manual:") })
+    }
+
+    private func start() {
         var errorCode: Int32 = 0
         discovery = tp_play_discovery_create(
             tpPlayDiscoveryCallback,
@@ -45,8 +96,13 @@ final class ConsoleDiscoveryStore: ObservableObject {
     }
 
     fileprivate func receive(_ consoles: [DiscoveredConsole]) {
-        self.consoles = consoles
+        merge(network: consoles)
         errorMessage = nil
+    }
+
+    private func merge(network: [DiscoveredConsole]) {
+        let addresses = Set(network.map { $0.address.lowercased() })
+        consoles = network + manualConsoles.filter { !addresses.contains($0.address.lowercased()) }
     }
 }
 

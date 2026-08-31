@@ -32,5 +32,9 @@ DEVELOPER_DIR=/Volumes/XcodeSSD/Applications/Xcode.app/Contents/Developer \
   build
 ```
 
-The first milestone is an application shell only. It does not yet connect to
-`libchiaki`, decode video, play audio, discover consoles, or register consoles.
+The iOS target now links the Chiaki core and provides local-network discovery,
+manual host entry, console registration with Keychain storage, wake-on-LAN,
+hardware video decoding, Metal presentation, audio playback, external controller
+input, and an on-screen controller. Device runtime behavior still needs to be
+validated against real PS4 and PS5 hardware as those paths cannot be exercised by
+the command-line build alone.

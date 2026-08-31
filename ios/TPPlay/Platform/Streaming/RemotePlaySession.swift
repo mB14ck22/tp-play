@@ -1,6 +1,15 @@
 import Foundation
 import GameController
 
+struct StreamConfiguration: Sendable {
+    let width: UInt32
+    let height: UInt32
+    let fps: UInt32
+    let bitrate: UInt32
+
+    static let highQuality = StreamConfiguration(width: 1920, height: 1080, fps: 60, bitrate: 15_000)
+}
+
 @MainActor
 final class RemotePlaySession: ObservableObject {
     enum State: Equatable {
@@ -18,7 +27,7 @@ final class RemotePlaySession: ObservableObject {
     nonisolated let audioPlayer = AudioPlayer()
     private var controller = TPPlayControllerState()
 
-    init(console: RegisteredConsole) {
+    init(console: RegisteredConsole, configuration: StreamConfiguration = .highQuality) {
         let isPS5 = console.target >= 1_000_000
         videoDecoder = VideoDecoder(hevc: isPS5)
         videoDecoder.onFrame = { [renderer] frame in
@@ -36,10 +45,10 @@ final class RemotePlaySession: ObservableObject {
                         console.registrationKey.count,
                         key.bindMemory(to: UInt8.self).baseAddress,
                         console.key.count,
-                        1920,
-                        1080,
-                        60,
-                        15_000,
+                        configuration.width,
+                        configuration.height,
+                        configuration.fps,
+                        configuration.bitrate,
                         isPS5 ? 1 : 0,
                         tpPlaySessionEventCallback,
                         tpPlayVideoCallback,
@@ -104,6 +113,21 @@ final class RemotePlaySession: ObservableObject {
         let scaled = UInt8(clamping: Int(value * 255))
         if left { controller.l2 = scaled } else { controller.r2 = scaled }
         sendController()
+    }
+
+    func setTouch(active: Bool, x: UInt16 = 0, y: UInt16 = 0) {
+        controller.touch_active = active
+        controller.touch_x = x
+        controller.touch_y = y
+        sendController()
+    }
+
+    func clickTouchpad() {
+        setButton(1 << 14, pressed: true)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(90))
+            self?.setButton(1 << 14, pressed: false)
+        }
     }
 
     func attach(_ gameController: GCController) {

@@ -3,11 +3,12 @@ import GameController
 
 struct RemotePlayView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var session: RemotePlaySession
     @State private var loginPIN = ""
 
-    init(console: RegisteredConsole) {
-        _session = StateObject(wrappedValue: RemotePlaySession(console: console))
+    init(console: RegisteredConsole, configuration: StreamConfiguration = .highQuality) {
+        _session = StateObject(wrappedValue: RemotePlaySession(console: console, configuration: configuration))
     }
 
     var body: some View {
@@ -53,6 +54,13 @@ struct RemotePlayView: View {
                 session.attach(controller)
             }
         }
+        .onDisappear { session.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                session.stop()
+                dismiss()
+            }
+        }
     }
 
     private var loginPINBinding: Binding<Bool> {
@@ -86,9 +94,11 @@ struct RemotePlayView: View {
                 HStack(spacing: 10) {
                     ControllerTextButton(label: "L2", session: session, triggerLeft: true)
                     ControllerTextButton(label: "L1", mask: 1 << 8, session: session)
+                    ControllerTextButton(label: "L3", mask: 1 << 10, session: session)
                 }
                 Spacer()
                 HStack(spacing: 10) {
+                    ControllerTextButton(label: "R3", mask: 1 << 11, session: session)
                     ControllerTextButton(label: "R1", mask: 1 << 9, session: session)
                     ControllerTextButton(label: "R2", session: session, triggerLeft: false)
                 }
@@ -116,6 +126,7 @@ struct RemotePlayView: View {
                         ControllerTextButton(label: "PS", mask: 1 << 15, session: session)
                         ControllerTextButton(label: "OPTIONS", mask: 1 << 12, session: session)
                     }
+                    TouchpadControl(session: session)
                     HStack(alignment: .bottom, spacing: 14) {
                         VirtualStick { x, y in session.setRightStick(x: x, y: y) }
                         VStack(spacing: 4) {
@@ -133,6 +144,41 @@ struct RemotePlayView: View {
             .padding(.bottom, 24)
             .foregroundStyle(.white.opacity(0.8))
         }
+    }
+}
+
+private struct TouchpadControl: View {
+    @ObservedObject var session: RemotePlaySession
+
+    var body: some View {
+        GeometryReader { geometry in
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    Text("TOUCHPAD")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 1, coordinateSpace: .local)
+                        .onChanged { value in
+                            let x = max(0, min(1, value.location.x / geometry.size.width))
+                            let y = max(0, min(1, value.location.y / geometry.size.height))
+                            session.setTouch(
+                                active: true,
+                                x: UInt16(x * 1919),
+                                y: UInt16(y * 941)
+                            )
+                        }
+                        .onEnded { _ in session.setTouch(active: false) }
+                )
+                .onTapGesture { session.clickTouchpad() }
+        }
+        .frame(width: 132, height: 38)
+        .accessibilityLabel("Touchpad")
+        .accessibilityHint("Drag to move a touch or tap to click")
     }
 }
 

@@ -209,6 +209,18 @@ void tp_play_discovery_destroy(TPPlayDiscovery *discovery)
 	free(discovery);
 }
 
+int tp_play_console_wake(const char *host, uint64_t credential, bool ps5)
+{
+	if(!host)
+		return CHIAKI_ERR_INVALID_DATA;
+	pthread_once(&tp_play_core_once, tp_play_initialize_core);
+	if(tp_play_core_init_error != CHIAKI_ERR_SUCCESS)
+		return tp_play_core_init_error;
+	ChiakiLog log;
+	chiaki_log_init(&log, CHIAKI_LOG_WARNING | CHIAKI_LOG_ERROR, chiaki_log_cb_print, NULL);
+	return chiaki_discovery_wakeup(&log, NULL, host, credential, ps5);
+}
+
 TPPlayRegistration *tp_play_registration_create(
 	int target,
 	const char *host,
@@ -405,6 +417,10 @@ int tp_play_session_set_controller(TPPlaySession *session, const TPPlayControlle
 	controller.left_y = state->left_y;
 	controller.right_x = state->right_x;
 	controller.right_y = state->right_y;
+	controller.touches[0].id = state->touch_active ? 0 : -1;
+	controller.touches[0].x = state->touch_x;
+	controller.touches[0].y = state->touch_y;
+	controller.touch_id_next = state->touch_active ? 1 : 0;
 	return chiaki_session_set_controller_state(&session->session, &controller);
 }
 

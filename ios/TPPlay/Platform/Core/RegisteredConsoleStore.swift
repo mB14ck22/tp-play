@@ -39,6 +39,26 @@ final class RegisteredConsoleStore: ObservableObject {
         storageError = nil
     }
 
+    func remove(_ console: RegisteredConsole) {
+        let updated = consoles.filter { $0.id != console.id }
+        do {
+            try keychain.save(updated)
+            consoles = updated
+            storageError = nil
+        } catch {
+            storageError = error.localizedDescription
+        }
+    }
+
+    func updateAddressIfNeeded(_ console: RegisteredConsole) {
+        guard consoles.first(where: { $0.id == console.id })?.address != console.address else { return }
+        do {
+            try save(console)
+        } catch {
+            storageError = error.localizedDescription
+        }
+    }
+
     func registration(for console: DiscoveredConsole) -> RegisteredConsole? {
         consoles.first { registered in
             registered.nickname == console.name || registered.address == console.address
