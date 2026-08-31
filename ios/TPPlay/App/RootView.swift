@@ -30,10 +30,10 @@ struct RootView: View {
                 case .home: HomeView()
                 }
             }
-            .padding(.bottom, 52)
+            .padding(.bottom, 72)
 
             AcidDock(selection: $selection)
-                .frame(height: 52)
+                .frame(height: 72)
         }
         .ignoresSafeArea(edges: .bottom)
         .preferredColorScheme(.dark)
