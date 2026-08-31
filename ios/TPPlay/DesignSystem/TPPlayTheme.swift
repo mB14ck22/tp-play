@@ -1,11 +1,15 @@
 import SwiftUI
+import UIKit
 
 enum TPPlayTheme {
-    static let canvas = Color(red: 0.035, green: 0.043, blue: 0.059)
-    static let surface = Color(red: 0.075, green: 0.086, blue: 0.110)
-    static let surfaceRaised = Color(red: 0.102, green: 0.118, blue: 0.148)
-    static let border = Color.white.opacity(0.12)
-    static let accent = Color(red: 0.32, green: 0.66, blue: 1.0)
-    static let secondaryText = Color.white.opacity(0.62)
-    static let tertiaryText = Color.white.opacity(0.42)
+    static let canvas = Color(uiColor: .systemBackground)
+    static let surface = Color(uiColor: .secondarySystemBackground)
+    static let surfaceRaised = Color(uiColor: .tertiarySystemBackground)
+    static let border = Color(uiColor: .separator).opacity(0.55)
+    static let accent = Color.primary
+    static let onAccent = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .black : .white
+    })
+    static let secondaryText = Color(uiColor: .secondaryLabel)
+    static let tertiaryText = Color(uiColor: .tertiaryLabel)
 }

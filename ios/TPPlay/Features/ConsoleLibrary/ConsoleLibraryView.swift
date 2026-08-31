@@ -8,7 +8,6 @@ struct ConsoleLibraryView: View {
     @State private var consoleToRemove: RegisteredConsole?
     @State private var wakeError: String?
     @State private var showingManualConsole = false
-    @State private var showingSettings = false
     @AppStorage("streamResolution") private var streamResolution = 1080
     @AppStorage("streamFPS") private var streamFPS = 60
     @AppStorage("streamBitrate") private var streamBitrate = 15_000
@@ -41,11 +40,7 @@ struct ConsoleLibraryView: View {
             }
             .navigationTitle("TP Play")
             .navigationBarTitleDisplayMode(.inline)
-            .preferredColorScheme(.dark)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Streaming settings", systemImage: "slider.horizontal.3") { showingSettings = true }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add console", systemImage: "plus") { showingManualConsole = true }
                 }
@@ -58,9 +53,6 @@ struct ConsoleLibraryView: View {
                     discovery.addManual(address: address, isPS5: isPS5)
                     showingManualConsole = false
                 }
-            }
-            .sheet(isPresented: $showingSettings) {
-                StreamingSettingsView()
             }
             .fullScreenCover(item: $consoleToPlay) { console in
                 RemotePlayView(console: console, configuration: streamConfiguration)
@@ -193,11 +185,11 @@ private struct RegisteredConsoleCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(console.nickname)
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(nearby == nil ? TPPlayTheme.tertiaryText : Color.green)
+                            .fill(nearby == nil ? TPPlayTheme.tertiaryText : TPPlayTheme.accent)
                             .frame(width: 7, height: 7)
                         Text(statusText)
                             .font(.caption)
@@ -208,7 +200,7 @@ private struct RegisteredConsoleCard: View {
                 Spacer(minLength: 8)
                 Image(systemName: canStartSession ? "play.fill" : "power")
                     .font(.headline)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(TPPlayTheme.onAccent)
                     .frame(width: 44, height: 44)
                     .background(TPPlayTheme.accent, in: Circle())
             }
@@ -255,7 +247,7 @@ private struct NearbyConsoleCard: View {
             HStack(spacing: 16) {
                 ConsoleGlyph(isPS5: console.isPS5)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(console.name).font(.headline).foregroundStyle(.white)
+                    Text(console.name).font(.headline).foregroundStyle(.primary)
                     Text("\(console.isPS5 ? "PS5" : "PS4")  ·  \(console.address)")
                         .font(.caption)
                         .foregroundStyle(TPPlayTheme.secondaryText)
@@ -375,57 +367,6 @@ private struct ManualConsoleView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
-    }
-}
-
-private struct StreamingSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @AppStorage("streamResolution") private var resolution = 1080
-    @AppStorage("streamFPS") private var fps = 60
-    @AppStorage("streamBitrate") private var bitrate = 15_000
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Video") {
-                    Picker("Resolution", selection: $resolution) {
-                        Text("720p").tag(720)
-                        Text("1080p").tag(1080)
-                    }
-                    Picker("Frame rate", selection: $fps) {
-                        Text("30 fps").tag(30)
-                        Text("60 fps").tag(60)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        LabeledContent("Bitrate", value: "\(bitrate / 1_000) Mbps")
-                        Slider(
-                            value: Binding(get: { Double(bitrate) }, set: { bitrate = Int($0) }),
-                            in: 4_000...30_000,
-                            step: 1_000
-                        )
-                    }
-                }
-
-                Section {
-                    Button("Reset to recommended") {
-                        resolution = 1080
-                        fps = 60
-                        bitrate = 15_000
-                    }
-                } footer: {
-                    Text("1080p at 60 fps and 15 Mbps is recommended for a strong 5 GHz or 6 GHz local network. Use 720p or a lower bitrate if video stutters.")
-                }
-            }
-            .navigationTitle("Streaming")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
     }
 }
 
