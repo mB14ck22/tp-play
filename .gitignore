@@ -44,3 +44,4 @@ site/
 DerivedData/
 *.xcuserstate
 xcuserdata/
+/ios/.build/

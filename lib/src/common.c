@@ -83,7 +83,7 @@ CHIAKI_EXPORT void chiaki_aligned_free(void *ptr)
 #endif
 }
 
-CHIAKI_EXPORT ChiakiErrorCode chiaki_lib_init()
+CHIAKI_EXPORT ChiakiErrorCode chiaki_lib_init(void)
 {
 	unsigned int seed;
 	chiaki_random_bytes_crypt((uint8_t *)&seed, sizeof(seed));

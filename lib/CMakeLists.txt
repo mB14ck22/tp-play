@@ -107,7 +107,9 @@ set_source_files_properties(${CHIAKI_LIB_PROTO_SOURCE_FILES} ${CHIAKI_LIB_PROTO_
 include_directories("${CHIAKI_LIB_PROTO_INCLUDE_DIR}")
 
 if(CHIAKI_LIB_ENABLE_OPUS)
-	find_package(Opus REQUIRED)
+	if(NOT CHIAKI_LIB_OPUS_EXTERNAL_PROJECT)
+		find_package(Opus REQUIRED)
+	endif()
 	include_directories(${Opus_INCLUDE_DIRS})
 endif()
 
@@ -159,7 +161,9 @@ else()
 	target_link_libraries(chiaki-lib PkgConfig::MINIUPNPC)
 endif()
 
-if(NOT CHIAKI_IS_SWITCH AND NOT CHIAKI_ENABLE_ANDROID)
+if(CHIAKI_LIB_LIBEVENT_EXTERNAL_PROJECT)
+	target_link_libraries(chiaki-lib event_core)
+elseif(NOT CHIAKI_IS_SWITCH AND NOT CHIAKI_ENABLE_ANDROID)
 	find_program(PKG_CONFIG_EXECUTABLE pkg-config)
 	if(PKG_CONFIG_EXECUTABLE)
 		pkg_search_module(LIBEVENT libevent QUIET IMPORTED_TARGET)

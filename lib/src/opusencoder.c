@@ -5,7 +5,11 @@
 
 #include <chiaki/opusencoder.h>
 
+#if defined(CHIAKI_LIB_OPUS_EXTERNAL_PROJECT)
+#include <opus.h>
+#else
 #include <opus/opus.h>
+#endif
 
 #include <string.h>
 

@@ -37,6 +37,12 @@ tri_option(CHIAKI_USE_SYSTEM_NANOPB "Use system-provided nanopb instead of submo
 tri_option(CHIAKI_USE_SYSTEM_CURL "Use system-provided curl instead of submodule. Has to be built with experimental WebSocket support!" OFF)
 option(CHIAKI_LIB_JSONC_EXTERNAL_PROJECT "Build json-c from source via FetchContent" OFF)
 option(CHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT "Build miniupnpc from source via FetchContent" OFF)
+option(CHIAKI_LIB_LIBEVENT_EXTERNAL_PROJECT "Build libevent from source via FetchContent" OFF)
+option(CHIAKI_LIB_OPUS_EXTERNAL_PROJECT "Build Opus from source via FetchContent" OFF)
+
+if(CHIAKI_LIB_OPUS_EXTERNAL_PROJECT)
+	add_compile_definitions(CHIAKI_LIB_OPUS_EXTERNAL_PROJECT)
+endif()
 
 set(CHIAKI_VERSION_MAJOR 1)
 set(CHIAKI_VERSION_MINOR 10)
@@ -141,9 +147,9 @@ if(CHIAKI_LIB_ENABLE_MBEDTLS)
 		set(USE_SHARED_MBEDTLS_LIBRARY CACHE INTERNAL OFF)
 		FetchContent_Declare(
 			mbedtls
-			GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
-			GIT_TAG 8b3f26a5ac38d4fdccbc5c5366229f3e01dafcc0 # v2.28.0
-			GIT_PROGRESS TRUE
+			URL https://github.com/Mbed-TLS/mbedtls/archive/8b3f26a5ac38d4fdccbc5c5366229f3e01dafcc0.tar.gz
+			URL_HASH SHA256=f16ba9cdec40b3063854962c870f7ab6b05ff9666f0acb5965ebcb163443e998
+			DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 		)
 		FetchContent_MakeAvailable(mbedtls)
 	endif()
@@ -199,6 +205,14 @@ endif()
 
 if(CHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT)
 	include(MiniupnpcExternalProject)
+endif()
+
+if(CHIAKI_LIB_LIBEVENT_EXTERNAL_PROJECT)
+	include(LibeventExternalProject)
+endif()
+
+if(CHIAKI_LIB_OPUS_EXTERNAL_PROJECT)
+	include(OpusExternalProject)
 endif()
 
 add_subdirectory(lib)

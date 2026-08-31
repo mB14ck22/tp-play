@@ -11,6 +11,9 @@
 		100000000000000000000002 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000002 /* RootView.swift */; };
 		100000000000000000000003 /* TPPlayTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000003 /* TPPlayTheme.swift */; };
 		100000000000000000000004 /* ConsoleLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000004 /* ConsoleLibraryView.swift */; };
+		100000000000000000000005 /* TPPlayCore.c in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* TPPlayCore.c */; };
+		100000000000000000000006 /* ConsoleDiscoveryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000B /* ConsoleDiscoveryStore.swift */; };
+		100000000000000000000007 /* libTPPlayCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000C /* libTPPlayCore.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +24,11 @@
 		200000000000000000000005 /* TPPlay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TPPlay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		200000000000000000000006 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		200000000000000000000007 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		200000000000000000000008 /* TPPlayCore.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TPPlayCore.h; sourceTree = "<group>"; };
+		200000000000000000000009 /* TPPlayCore.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = TPPlayCore.c; sourceTree = "<group>"; };
+		20000000000000000000000A /* TPPlay-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TPPlay-Bridging-Header.h"; sourceTree = "<group>"; };
+		20000000000000000000000B /* ConsoleDiscoveryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleDiscoveryStore.swift; sourceTree = "<group>"; };
+		20000000000000000000000C /* libTPPlayCore.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = .build/iphoneos/libTPPlayCore.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -28,6 +36,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				100000000000000000000007 /* libTPPlayCore.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -38,6 +47,7 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000006 /* README.md */,
+				20000000000000000000000C /* libTPPlayCore.a */,
 				300000000000000000000003 /* TPPlay */,
 				300000000000000000000002 /* Products */,
 			);
@@ -99,8 +109,20 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000007 /* README.md */,
+				300000000000000000000009 /* Core */,
 			);
 			path = Platform;
+			sourceTree = "<group>";
+		};
+		300000000000000000000009 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000008 /* TPPlayCore.h */,
+				200000000000000000000009 /* TPPlayCore.c */,
+				20000000000000000000000A /* TPPlay-Bridging-Header.h */,
+				20000000000000000000000B /* ConsoleDiscoveryStore.swift */,
+			);
+			path = Core;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -110,6 +132,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 700000000000000000000002 /* Build configuration list for PBXNativeTarget "TPPlay" */;
 			buildPhases = (
+				500000000000000000000004 /* Build TP Play Core */,
 				500000000000000000000001 /* Sources */,
 				500000000000000000000002 /* Frameworks */,
 				500000000000000000000003 /* Resources */,
@@ -166,6 +189,24 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		500000000000000000000004 /* Build TP Play Core */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Build TP Play Core";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/scripts/build-core.sh\" iphoneos\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		500000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -175,6 +216,8 @@
 				100000000000000000000002 /* RootView.swift in Sources */,
 				100000000000000000000003 /* TPPlayTheme.swift in Sources */,
 				100000000000000000000004 /* ConsoleLibraryView.swift in Sources */,
+				100000000000000000000005 /* TPPlayCore.c in Sources */,
+				100000000000000000000006 /* ConsoleDiscoveryStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -305,8 +348,10 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/.build/iphoneos/include";
 				INFOPLIST_KEY_CFBundleDisplayName = "TP Play";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "TP Play uses your local network to find and connect to your PlayStation console.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -316,9 +361,19 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					Security,
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					SystemConfiguration,
+				);
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/.build/iphoneos";
 				PRODUCT_BUNDLE_IDENTIFIER = com.mb14ck22.tpplay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "TPPlay/Platform/Core/TPPlay-Bridging-Header.h";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -334,8 +389,10 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/.build/iphoneos/include";
 				INFOPLIST_KEY_CFBundleDisplayName = "TP Play";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "TP Play uses your local network to find and connect to your PlayStation console.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -345,9 +402,19 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					Security,
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					SystemConfiguration,
+				);
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/.build/iphoneos";
 				PRODUCT_BUNDLE_IDENTIFIER = com.mb14ck22.tpplay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "TPPlay/Platform/Core/TPPlay-Bridging-Header.h";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ConsoleLibraryView: View {
-    @State private var isShowingRegistrationMilestone = false
+    @StateObject private var discovery = ConsoleDiscoveryStore()
 
     var body: some View {
         NavigationStack {
@@ -11,7 +11,7 @@ struct ConsoleLibraryView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
                         introduction
-                        emptyLibrary
+                        consoleLibrary
                         implementationStatus
                     }
                     .frame(maxWidth: 720, alignment: .leading)
@@ -22,11 +22,6 @@ struct ConsoleLibraryView: View {
             .navigationTitle("TP Play")
             .navigationBarTitleDisplayMode(.large)
             .preferredColorScheme(.dark)
-            .sheet(isPresented: $isShowingRegistrationMilestone) {
-                RegistrationMilestoneView()
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
-            }
         }
     }
 
@@ -35,10 +30,29 @@ struct ConsoleLibraryView: View {
             Text("Remote Play, natively built")
                 .font(.title2.weight(.semibold))
 
-            Text("Your registered consoles will appear here. The iOS client shell is ready; discovery and registration are the next implementation milestone.")
+            Text("Keep your iPhone on the same network as your PlayStation. TP Play scans the local network automatically.")
                 .font(.body)
                 .foregroundStyle(TPPlayTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var consoleLibrary: some View {
+        if let errorMessage = discovery.errorMessage {
+            ContentUnavailableView(
+                "Discovery unavailable",
+                systemImage: "wifi.exclamationmark",
+                description: Text(errorMessage)
+            )
+        } else if discovery.consoles.isEmpty {
+            emptyLibrary
+        } else {
+            VStack(spacing: 12) {
+                ForEach(discovery.consoles) { console in
+                    ConsoleCard(console: console)
+                }
+            }
         }
     }
 
@@ -50,23 +64,17 @@ struct ConsoleLibraryView: View {
                 .accessibilityHidden(true)
 
             VStack(spacing: 6) {
-                Text("No consoles registered")
+                Text("Searching for consoles")
                     .font(.headline)
 
-                Text("Registration is not connected to the Chiaki core yet.")
+                Text("Turn on your PS4 or PS5 and allow Local Network access when iOS asks.")
                     .font(.subheadline)
                     .foregroundStyle(TPPlayTheme.secondaryText)
                     .multilineTextAlignment(.center)
             }
 
-            Button {
-                isShowingRegistrationMilestone = true
-            } label: {
-                Label("View next milestone", systemImage: "arrow.right")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(TPPlayTheme.accent)
+            ProgressView()
+                .tint(TPPlayTheme.accent)
         }
         .frame(maxWidth: .infinity)
         .padding(24)
@@ -85,9 +93,49 @@ struct ConsoleLibraryView: View {
                 .foregroundStyle(TPPlayTheme.secondaryText)
 
             StatusRow(title: "Native SwiftUI application", isReady: true)
-            StatusRow(title: "Chiaki C bridge", isReady: false)
+            StatusRow(title: "Chiaki core \(discovery.coreVersion) and LAN discovery", isReady: true)
             StatusRow(title: "VideoToolbox and Metal", isReady: false)
             StatusRow(title: "Audio and controller input", isReady: false)
+        }
+    }
+}
+
+private struct ConsoleCard: View {
+    let console: DiscoveredConsole
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: console.isPS5 ? "playstation.logo" : "gamecontroller.fill")
+                .font(.title2)
+                .foregroundStyle(TPPlayTheme.accent)
+                .frame(width: 44, height: 44)
+                .background(TPPlayTheme.canvas, in: RoundedRectangle(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(console.name)
+                    .font(.headline)
+                Text([console.isPS5 ? "PS5" : "PS4", console.address].joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(TPPlayTheme.secondaryText)
+                if let runningAppName = console.runningAppName {
+                    Text(runningAppName)
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            Circle()
+                .fill(console.state == .ready ? Color.green : Color.orange)
+                .frame(width: 9, height: 9)
+                .accessibilityLabel(console.state == .ready ? "Ready" : "Standby")
+        }
+        .padding(16)
+        .background(TPPlayTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(TPPlayTheme.border, lineWidth: 1)
         }
     }
 }
@@ -108,41 +156,6 @@ private struct StatusRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(isReady ? "Ready" : "Not implemented")
-    }
-}
-
-private struct RegistrationMilestoneView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                Image(systemName: "network")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(TPPlayTheme.accent)
-
-                Text("Discovery and registration")
-                    .font(.title2.weight(.semibold))
-
-                Text("The next milestone will expose console discovery and registration through a stable C bridge into libchiaki. This screen does not claim those capabilities are available yet.")
-                    .foregroundStyle(TPPlayTheme.secondaryText)
-
-                Spacer()
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(TPPlayTheme.canvas.ignoresSafeArea())
-            .navigationTitle("Next milestone")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-            .preferredColorScheme(.dark)
-        }
     }
 }
 

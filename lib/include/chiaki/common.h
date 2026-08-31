@@ -90,7 +90,7 @@ static inline bool chiaki_target_is_ps5(ChiakiTarget target) { return target >= 
 /**
  * Perform initialization of global state needed for using the Chiaki lib
  */
-CHIAKI_EXPORT ChiakiErrorCode chiaki_lib_init();
+CHIAKI_EXPORT ChiakiErrorCode chiaki_lib_init(void);
 
 typedef enum
 {
