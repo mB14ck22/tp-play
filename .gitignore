@@ -39,3 +39,8 @@ chiaki.conf
 .cache/
 *.vscode
 site/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/

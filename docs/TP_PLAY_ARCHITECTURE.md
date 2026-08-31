@@ -17,7 +17,7 @@ changes remain reviewable:
 - `lib/`: shared Chiaki protocol, discovery, session, encryption, and streaming
   code
 - `android/`: Android application and its native platform integration
-- `ios/`: native iOS application, to be introduced as TP Play code
+- `ios/`: native TP Play iOS application and Xcode project
 - `mobile/bridge/`: proposed stable C-facing mobile API, to be introduced
   without exposing internal C++ types to Swift or Kotlin
 
@@ -62,11 +62,12 @@ TP Play origin repository is selected.
 
 ## Initial implementation order
 
-1. Select application identifiers and deployment targets.
+1. Establish the iOS Swift shell. (Implemented; core integration pending.)
 2. Introduce the stable mobile C API and contract tests.
-3. Establish the Android Kotlin shell and retain a zero-copy MediaCodec path.
-4. Establish the iOS Swift shell and implement the VideoToolbox/Metal path.
-5. Add discovery, registration, session lifecycle, audio, controller, and touch
+3. Add discovery and registration through the bridge.
+4. Implement the iOS VideoToolbox/Metal path.
+5. Establish the Android Kotlin shell and retain a zero-copy MediaCodec path.
+6. Add session lifecycle, audio, controller, and touch
    controls in that order.
-6. Measure glass-to-glass latency, audio stability, frame pacing, thermals, and
+7. Measure glass-to-glass latency, audio stability, frame pacing, thermals, and
    reconnect behavior on physical devices before release claims are made.

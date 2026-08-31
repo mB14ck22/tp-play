@@ -8,9 +8,18 @@ shared protocol and streaming core while building native mobile applications.
 
 ## Project status
 
-TP Play is currently at the upstream-baseline stage. The repository contains a
-clean chiaki-ng baseline; TP Play product identifiers, native iOS application,
-and the new Android application architecture have not been implemented yet.
+TP Play currently contains a clean chiaki-ng baseline plus the first native iOS
+application shell. The shell builds independently but is not connected to the
+Chiaki core yet. The new Android application architecture has not been
+implemented.
+
+## Repository map
+
+- `ios/`: native TP Play iOS application (Swift and SwiftUI)
+- `android/`: current chiaki-ng Android frontend; TP Play migration pending
+- `lib/`: shared Chiaki protocol and streaming core
+- `gui/`: upstream desktop frontend
+- `switch/`: upstream Nintendo Switch frontend
 
 ## Technical direction
 
