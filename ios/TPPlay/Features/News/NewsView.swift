@@ -364,7 +364,7 @@ private struct BrowserToolbarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(foreground)
-            .background(background)
+            .background(background, ignoresSafeAreaEdges: [])
             .overlay { Rectangle().stroke(background, lineWidth: 1) }
             .opacity(configuration.isPressed ? 0.62 : 1)
     }
