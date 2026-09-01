@@ -225,17 +225,45 @@ private struct ArticleBrowserView: View {
     }
 
     var body: some View {
+        ZStack {
+            ArticleWebView(model: browser)
+
+            if let errorMessage = browser.errorMessage {
+                VStack(spacing: 14) {
+                    Text("SOURCE UNREACHABLE")
+                        .font(.system(size: 15, weight: .black, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.primaryText)
+                    Text(errorMessage.uppercased())
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.secondaryText)
+                        .multilineTextAlignment(.center)
+                    Button("RETRY >") { browser.reload() }
+                        .frame(width: 132, height: 42)
+                        .buttonStyle(AcidButtonStyle(active: true))
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(TPPlayTheme.canvas)
+                .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+                .padding(20)
+            }
+        }
+        .overlay(alignment: .leading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: 24)
+                .gesture(edgeBackGesture)
+                .accessibilityHidden(true)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            browserToolbar
+        }
+    }
+
+    private var browserToolbar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                Button(action: onClose) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
-                        Text("NEWS")
-                    }
-                    .font(.system(size: 10, weight: .black, design: .monospaced))
-                    .frame(width: 82, height: 48)
-                }
-                .buttonStyle(AcidButtonStyle(active: true))
+                toolbarButton(label: "NEWS", symbol: "chevron.left", action: onClose)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(browser.isLoading ? "LOADING SOURCE" : "SOURCE ONLINE")
@@ -250,18 +278,9 @@ private struct ArticleBrowserView: View {
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
-                Button {
+                toolbarButton(label: "EXT", symbol: "arrow.up.right", violetFill: true) {
                     openURL(browser.currentURL ?? article.link)
-                } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 12, weight: .black))
-                        Text("EXT")
-                            .font(.system(size: 8, weight: .black, design: .monospaced))
-                    }
-                    .frame(width: 58, height: 48)
                 }
-                .buttonStyle(AcidButtonStyle())
                 .accessibilityLabel("Open in external browser")
             }
             .frame(height: 48)
@@ -277,31 +296,52 @@ private struct ArticleBrowserView: View {
             }
             .frame(height: 2)
             .opacity(browser.isLoading ? 1 : 0)
+        }
+        .background(TPPlayTheme.canvas)
+    }
 
-            ZStack {
-                ArticleWebView(model: browser)
+    private func toolbarButton(
+        label: String,
+        symbol: String,
+        violetFill: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .black))
+                Text(label)
+                    .font(.system(size: 8, weight: .black, design: .monospaced))
+            }
+            .frame(width: 60, height: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(BrowserToolbarButtonStyle(violetFill: violetFill))
+    }
 
-                if let errorMessage = browser.errorMessage {
-                    VStack(spacing: 14) {
-                        Text("SOURCE UNREACHABLE")
-                            .font(.system(size: 15, weight: .black, design: .monospaced))
-                            .foregroundStyle(TPPlayTheme.primaryText)
-                        Text(errorMessage.uppercased())
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-                            .foregroundStyle(TPPlayTheme.secondaryText)
-                            .multilineTextAlignment(.center)
-                        Button("RETRY >") { browser.reload() }
-                            .frame(width: 132, height: 42)
-                            .buttonStyle(AcidButtonStyle(active: true))
-                    }
-                    .padding(24)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(TPPlayTheme.canvas)
-                    .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
-                    .padding(20)
+    private var edgeBackGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onEnded { value in
+                guard value.translation.width > 48,
+                      abs(value.translation.height) < value.translation.width else { return }
+                if browser.canGoBack {
+                    browser.goBack()
+                } else {
+                    onClose()
                 }
             }
-        }
+    }
+}
+
+private struct BrowserToolbarButtonStyle: ButtonStyle {
+    let violetFill: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(TPPlayTheme.primaryText)
+            .background(violetFill ? TPPlayTheme.violet : TPPlayTheme.surface)
+            .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+            .opacity(configuration.isPressed ? 0.62 : 1)
     }
 }
 
@@ -326,6 +366,8 @@ private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigatio
     var visibleProgress: Double {
         min(max(estimatedProgress, 0.04), 1)
     }
+
+    var canGoBack: Bool { webView.canGoBack }
 
     init(url: URL) {
         initialURL = url
@@ -352,6 +394,11 @@ private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigatio
         } else {
             webView.reload()
         }
+    }
+
+    func goBack() {
+        guard webView.canGoBack else { return }
+        webView.goBack()
     }
 
     private func load(_ url: URL) {
