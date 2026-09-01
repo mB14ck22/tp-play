@@ -56,16 +56,10 @@ struct NewsView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("NEWS // FEED")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .tracking(1.5)
-                    .foregroundStyle(TPPlayTheme.accent)
-                Text("INDEPENDENT SIGNALS")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .tracking(0.7)
-                    .foregroundStyle(TPPlayTheme.secondaryText)
-            }
+            Text("NEWS // FEED")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .tracking(1.5)
+                .foregroundStyle(TPPlayTheme.accent)
             Spacer()
             Button {
                 Task { await store.refreshAll() }
@@ -173,15 +167,6 @@ private struct NewsArticleCard: View {
                             .multilineTextAlignment(.leading)
                     }
 
-                    HStack {
-                        Text("OPEN SOURCE")
-                        Spacer()
-                        Text(">")
-                    }
-                    .font(.system(size: 9, weight: .black, design: .monospaced))
-                    .tracking(0.7)
-                    .foregroundStyle(TPPlayTheme.accent)
-                    .padding(.top, 4)
                 }
                 .padding(14)
             }
