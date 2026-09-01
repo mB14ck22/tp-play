@@ -16,21 +16,12 @@ struct NewsView: View {
     var body: some View {
         ZStack {
             TPPlayTheme.canvas.ignoresSafeArea()
+            feedView
+                .allowsHitTesting(openArticle == nil)
+
             if let openArticle {
                 ArticleBrowserView(article: openArticle) { self.openArticle = nil }
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
-                        header
-                        sourceRail
-                        statusLine
-                        content
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
-                }
-                .refreshable { await store.refreshAll() }
+                    .zIndex(1)
             }
         }
         .fullScreenCover(isPresented: $showingSources) {
@@ -46,6 +37,21 @@ struct NewsView: View {
                 self.selectedSourceID = nil
             }
         }
+    }
+
+    private var feedView: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                header
+                sourceRail
+                statusLine
+                content
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+        }
+        .refreshable { await store.refreshAll() }
     }
 
     private var header: some View {
@@ -217,6 +223,8 @@ private struct ArticleBrowserView: View {
     let onClose: () -> Void
     @Environment(\.openURL) private var openURL
     @StateObject private var browser: ArticleBrowserModel
+    @State private var rootDragOffset: CGFloat = 0
+    @State private var isCompletingRootBack = false
 
     init(article: FeedArticle, onClose: @escaping () -> Void) {
         self.article = article
@@ -225,42 +233,48 @@ private struct ArticleBrowserView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            browserToolbar
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                browserToolbar
 
-            ZStack {
-                ArticleWebView(model: browser)
+                ZStack {
+                    ArticleWebView(model: browser)
 
-                if let errorMessage = browser.errorMessage {
-                    VStack(spacing: 14) {
-                        Text("SOURCE UNREACHABLE")
-                            .font(.system(size: 15, weight: .black, design: .monospaced))
-                            .foregroundStyle(TPPlayTheme.primaryText)
-                        Text(errorMessage.uppercased())
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-                            .foregroundStyle(TPPlayTheme.secondaryText)
-                            .multilineTextAlignment(.center)
-                        Button("RETRY >") { browser.reload() }
-                            .frame(width: 132, height: 42)
-                            .buttonStyle(AcidButtonStyle(active: true))
+                    if let errorMessage = browser.errorMessage {
+                        VStack(spacing: 14) {
+                            Text("SOURCE UNREACHABLE")
+                                .font(.system(size: 15, weight: .black, design: .monospaced))
+                                .foregroundStyle(TPPlayTheme.primaryText)
+                            Text(errorMessage.uppercased())
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundStyle(TPPlayTheme.secondaryText)
+                                .multilineTextAlignment(.center)
+                            Button("RETRY >") { browser.reload() }
+                                .frame(width: 132, height: 42)
+                                .buttonStyle(AcidButtonStyle(active: true))
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(TPPlayTheme.canvas)
+                        .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+                        .padding(20)
                     }
-                    .padding(24)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(TPPlayTheme.canvas)
-                    .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
-                    .padding(20)
                 }
             }
+            .padding(.top, windowTopSafeAreaInset)
+            .background(TPPlayTheme.canvas)
+            .ignoresSafeArea(edges: .top)
+            .offset(x: rootDragOffset)
             .overlay(alignment: .leading) {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .frame(width: 24)
-                    .gesture(edgeBackGesture)
-                    .accessibilityHidden(true)
+                if !browser.canGoBack && !isCompletingRootBack {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .frame(width: 28)
+                        .gesture(edgeBackGesture(viewportWidth: geometry.size.width))
+                        .accessibilityHidden(true)
+                }
             }
         }
-        .padding(.top, windowTopSafeAreaInset)
-        .background(TPPlayTheme.canvas)
         .ignoresSafeArea(edges: .top)
     }
 
@@ -331,15 +345,30 @@ private struct ArticleBrowserView: View {
         .buttonStyle(BrowserToolbarButtonStyle(fill: fill))
     }
 
-    private var edgeBackGesture: some Gesture {
-        DragGesture(minimumDistance: 12)
+    private func edgeBackGesture(viewportWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                guard value.translation.width > 0,
+                      abs(value.translation.height) < value.translation.width * 1.2 else { return }
+                rootDragOffset = min(value.translation.width, viewportWidth)
+            }
             .onEnded { value in
-                guard value.translation.width > 48,
-                      abs(value.translation.height) < value.translation.width else { return }
-                if browser.canGoBack {
-                    browser.goBack()
+                let shouldClose = rootDragOffset > viewportWidth * 0.3
+                    || value.predictedEndTranslation.width > viewportWidth * 0.55
+
+                if shouldClose {
+                    isCompletingRootBack = true
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        rootDragOffset = viewportWidth
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(180))
+                        onClose()
+                    }
                 } else {
-                    onClose()
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        rootDragOffset = 0
+                    }
                 }
             }
     }
@@ -383,16 +412,16 @@ private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigatio
     @Published private(set) var estimatedProgress = 0.0
     @Published private(set) var isLoading = true
     @Published private(set) var errorMessage: String?
+    @Published private(set) var canGoBack = false
 
     let webView: WKWebView
     private let initialURL: URL
     private var progressObservation: NSKeyValueObservation?
+    private var canGoBackObservation: NSKeyValueObservation?
 
     var visibleProgress: Double {
         min(max(estimatedProgress, 0.04), 1)
     }
-
-    var canGoBack: Bool { webView.canGoBack }
 
     init(url: URL) {
         initialURL = url
@@ -406,8 +435,12 @@ private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigatio
         webView.isOpaque = false
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
+        webView.allowsBackForwardNavigationGestures = true
         progressObservation = webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] webView, _ in
             Task { @MainActor in self?.estimatedProgress = webView.estimatedProgress }
+        }
+        canGoBackObservation = webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] webView, _ in
+            Task { @MainActor in self?.canGoBack = webView.canGoBack }
         }
         load(url)
     }
@@ -419,11 +452,6 @@ private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigatio
         } else {
             webView.reload()
         }
-    }
-
-    func goBack() {
-        guard webView.canGoBack else { return }
-        webView.goBack()
     }
 
     private func load(_ url: URL) {
