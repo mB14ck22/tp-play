@@ -225,45 +225,57 @@ private struct ArticleBrowserView: View {
     }
 
     var body: some View {
-        ZStack {
-            ArticleWebView(model: browser)
+        VStack(spacing: 0) {
+            browserToolbar
 
-            if let errorMessage = browser.errorMessage {
-                VStack(spacing: 14) {
-                    Text("SOURCE UNREACHABLE")
-                        .font(.system(size: 15, weight: .black, design: .monospaced))
-                        .foregroundStyle(TPPlayTheme.primaryText)
-                    Text(errorMessage.uppercased())
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundStyle(TPPlayTheme.secondaryText)
-                        .multilineTextAlignment(.center)
-                    Button("RETRY >") { browser.reload() }
-                        .frame(width: 132, height: 42)
-                        .buttonStyle(AcidButtonStyle(active: true))
+            ZStack {
+                ArticleWebView(model: browser)
+
+                if let errorMessage = browser.errorMessage {
+                    VStack(spacing: 14) {
+                        Text("SOURCE UNREACHABLE")
+                            .font(.system(size: 15, weight: .black, design: .monospaced))
+                            .foregroundStyle(TPPlayTheme.primaryText)
+                        Text(errorMessage.uppercased())
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(TPPlayTheme.secondaryText)
+                            .multilineTextAlignment(.center)
+                        Button("RETRY >") { browser.reload() }
+                            .frame(width: 132, height: 42)
+                            .buttonStyle(AcidButtonStyle(active: true))
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(TPPlayTheme.canvas)
+                    .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+                    .padding(20)
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(TPPlayTheme.canvas)
-                .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
-                .padding(20)
+            }
+            .overlay(alignment: .leading) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: 24)
+                    .gesture(edgeBackGesture)
+                    .accessibilityHidden(true)
             }
         }
-        .overlay(alignment: .leading) {
-            Color.clear
-                .contentShape(Rectangle())
-                .frame(width: 24)
-                .gesture(edgeBackGesture)
-                .accessibilityHidden(true)
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            browserToolbar
-        }
+        .padding(.top, windowTopSafeAreaInset)
+        .background(TPPlayTheme.canvas)
+        .ignoresSafeArea(edges: .top)
+    }
+
+    private var windowTopSafeAreaInset: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .safeAreaInsets.top ?? 0
     }
 
     private var browserToolbar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                toolbarButton(label: "NEWS", symbol: "chevron.left", action: onClose)
+                toolbarButton(label: "NEWS", symbol: "chevron.left", fill: .accent, action: onClose)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(browser.isLoading ? "LOADING SOURCE" : "SOURCE ONLINE")
@@ -278,7 +290,7 @@ private struct ArticleBrowserView: View {
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
-                toolbarButton(label: "EXT", symbol: "arrow.up.right", violetFill: true) {
+                toolbarButton(label: "EXT", symbol: "arrow.up.right", fill: .violet) {
                     openURL(browser.currentURL ?? article.link)
                 }
                 .accessibilityLabel("Open in external browser")
@@ -303,7 +315,7 @@ private struct ArticleBrowserView: View {
     private func toolbarButton(
         label: String,
         symbol: String,
-        violetFill: Bool = false,
+        fill: BrowserToolbarFill,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -316,7 +328,7 @@ private struct ArticleBrowserView: View {
             .frame(width: 60, height: 48)
             .contentShape(Rectangle())
         }
-        .buttonStyle(BrowserToolbarButtonStyle(violetFill: violetFill))
+        .buttonStyle(BrowserToolbarButtonStyle(fill: fill))
     }
 
     private var edgeBackGesture: some Gesture {
@@ -333,14 +345,27 @@ private struct ArticleBrowserView: View {
     }
 }
 
+private enum BrowserToolbarFill {
+    case accent
+    case violet
+}
+
 private struct BrowserToolbarButtonStyle: ButtonStyle {
-    let violetFill: Bool
+    let fill: BrowserToolbarFill
+
+    private var background: Color {
+        fill == .accent ? TPPlayTheme.accent : TPPlayTheme.violet
+    }
+
+    private var foreground: Color {
+        fill == .accent ? TPPlayTheme.onAccent : TPPlayTheme.primaryText
+    }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(TPPlayTheme.primaryText)
-            .background(violetFill ? TPPlayTheme.violet : TPPlayTheme.surface)
-            .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+            .foregroundStyle(foreground)
+            .background(background)
+            .overlay { Rectangle().stroke(background, lineWidth: 1) }
             .opacity(configuration.isPressed ? 0.62 : 1)
     }
 }
