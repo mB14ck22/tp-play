@@ -5,6 +5,7 @@ struct ConsoleLibraryView: View {
     @StateObject private var registeredConsoles = RegisteredConsoleStore()
     @StateObject private var remoteCredentials = RemoteCredentialStore()
     @State private var consoleToRegister: DiscoveredConsole?
+    @State private var pendingConsoleRegistration: DiscoveredConsole?
     @State private var playRequest: ConsolePlayRequest?
     @State private var consoleToRemove: RegisteredConsole?
     @State private var wakeError: String?
@@ -12,10 +13,6 @@ struct ConsoleLibraryView: View {
     @AppStorage("streamResolution") private var streamResolution = 1080
     @AppStorage("streamFPS") private var streamFPS = 60
     @AppStorage("streamBitrate") private var streamBitrate = 15_000
-
-    private var unregisteredConsoles: [DiscoveredConsole] {
-        discovery.consoles.filter { registeredConsoles.registration(for: $0) == nil }
-    }
 
     var body: some View {
         ZStack {
@@ -25,7 +22,7 @@ struct ConsoleLibraryView: View {
                     topBar
                     hero
                     if !registeredConsoles.consoles.isEmpty { consoleSection }
-                    nearbySection
+                    else { emptyConsoleState }
                     if let storageError = registeredConsoles.storageError {
                         Text("KEYCHAIN ERROR // \(storageError)")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
@@ -42,9 +39,24 @@ struct ConsoleLibraryView: View {
         .fullScreenCover(item: $consoleToRegister) { console in
             ConsoleRegistrationView(console: console, store: registeredConsoles)
         }
-        .fullScreenCover(isPresented: $showingManualConsole) {
+        .fullScreenCover(isPresented: $showingManualConsole, onDismiss: {
+            if let pendingConsoleRegistration {
+                consoleToRegister = pendingConsoleRegistration
+                self.pendingConsoleRegistration = nil
+            }
+        }) {
             ManualConsoleView { address, isPS5 in
-                discovery.addManual(address: address, isPS5: isPS5)
+                let cleanAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+                pendingConsoleRegistration = DiscoveredConsole(
+                    id: "manual:\(cleanAddress)",
+                    name: isPS5 ? "PlayStation 5" : "PlayStation 4",
+                    address: cleanAddress,
+                    systemVersion: "",
+                    runningAppName: nil,
+                    isPS5: isPS5,
+                    target: isPS5 ? 1_000_100 : 1_000,
+                    state: .unknown
+                )
                 showingManualConsole = false
             }
         }
@@ -74,6 +86,9 @@ struct ConsoleLibraryView: View {
         )) {
             Button("OK", role: .cancel) { wakeError = nil }
         } message: { Text(wakeError ?? "Unknown error") }
+        .onChange(of: registeredConsoles.consoles, initial: true) { _, consoles in
+            discovery.updateRegisteredConsoles(consoles)
+        }
     }
 
     private var streamConfiguration: StreamConfiguration {
@@ -144,24 +159,21 @@ struct ConsoleLibraryView: View {
         }
     }
 
-    @ViewBuilder private var nearbySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("LOCAL NETWORK", detail: discovery.isSearching ? "SCANNING" : "IDLE")
-            if let errorMessage = discovery.errorMessage {
-                StatePanel(title: "NETWORK UNAVAILABLE", message: errorMessage, actionTitle: "RETRY", action: discovery.restart)
-            } else if unregisteredConsoles.isEmpty {
-                StatePanel(
-                    title: registeredConsoles.consoles.isEmpty ? "SEARCHING FOR CONSOLE" : "NO NEW CONSOLES",
-                    message: "ENABLE REMOTE PLAY AND KEEP THE CONSOLE ON THIS LOCAL NETWORK.",
-                    actionTitle: nil,
-                    action: nil
-                )
-            } else {
-                ForEach(unregisteredConsoles) { console in
-                    NearbyConsoleCard(console: console) { consoleToRegister = console }
-                }
-            }
+    private var emptyConsoleState: some View {
+        VStack(spacing: 10) {
+            Text("NO LINKED CONSOLES")
+                .font(.system(size: 14, weight: .black, design: .monospaced))
+                .foregroundStyle(TPPlayTheme.primaryText)
+            Text("TAP + TO LINK A PLAYSTATION.")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .tracking(0.5)
+                .foregroundStyle(TPPlayTheme.secondaryText)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 26)
+        .background(TPPlayTheme.surface)
+        .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
     }
 
     private func sectionHeader(_ title: String, detail: String) -> some View {
@@ -246,33 +258,6 @@ private struct ConsolePlayRequest: Identifiable {
     let remote: RemoteConsoleConnection?
 }
 
-private struct NearbyConsoleCard: View {
-    let console: DiscoveredConsole
-    let onRegister: () -> Void
-
-    var body: some View {
-        Button(action: onRegister) {
-            HStack(spacing: 14) {
-                ConsoleGlyph(isPS5: console.isPS5)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(console.name.uppercased()).font(.system(size: 14, weight: .black, design: .monospaced))
-                    Text("\(console.isPS5 ? "PS5" : "PS4") // \(console.address)")
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundStyle(TPPlayTheme.secondaryText)
-                }
-                Spacer()
-                Text("LINK >")
-                    .font(.system(size: 10, weight: .black, design: .monospaced))
-                    .foregroundStyle(TPPlayTheme.accent)
-            }
-            .foregroundStyle(TPPlayTheme.primaryText)
-            .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 76)
-        }
-        .buttonStyle(AcidButtonStyle())
-    }
-}
-
 private struct ConsoleGlyph: View {
     let isPS5: Bool
     var body: some View {
@@ -282,38 +267,6 @@ private struct ConsoleGlyph: View {
             .frame(width: 48, height: 48)
             .background(TPPlayTheme.canvas)
             .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
-    }
-}
-
-private struct StatePanel: View {
-    let title: String
-    let message: String
-    let actionTitle: String?
-    let action: (() -> Void)?
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text(title)
-                .font(.system(size: 14, weight: .black, design: .monospaced))
-                .foregroundStyle(TPPlayTheme.primaryText)
-            Text(message)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .tracking(0.5)
-                .foregroundStyle(TPPlayTheme.secondaryText)
-                .multilineTextAlignment(.center)
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .frame(width: 120, height: 42)
-                    .buttonStyle(AcidButtonStyle(active: true))
-            } else {
-                ProgressView().tint(TPPlayTheme.accent)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 26)
-        .background(TPPlayTheme.surface)
-        .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
     }
 }
 
@@ -346,11 +299,11 @@ private struct ManualConsoleView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .textFieldStyle(AcidFieldStyle())
-                Text("USE MANUAL ENTRY WHEN LOCAL DISCOVERY CANNOT SEE THE CONSOLE.")
+                Text("ENTER THE CONSOLE ADDRESS, THEN COMPLETE REMOTE PLAY PAIRING.")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(TPPlayTheme.secondaryText)
                 Spacer()
-                Button("ADD CONSOLE >") { onAdd(address, isPS5) }
+                Button("CONTINUE TO LINK >") { onAdd(address, isPS5) }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .buttonStyle(AcidButtonStyle(active: true))
                     .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
