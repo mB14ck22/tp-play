@@ -25,7 +25,7 @@ struct RootView: View {
             Group {
                 switch selection {
                 case .play: ConsoleLibraryView()
-                case .news: PlaceholderSectionView(section: "NEWS // FEED", title: "NO FEED CONNECTED", message: "NEWS SOURCES WILL APPEAR HERE.", symbol: "bolt.horizontal.fill")
+                case .news: NewsView()
                 case .library: PlaceholderSectionView(section: "LIBRARY // TROPHIES", title: "TROPHY DATA OFFLINE", message: "CONNECT A DATA SOURCE TO BUILD YOUR LIBRARY.", symbol: "square.grid.2x2.fill")
                 case .home: HomeView()
                 }

@@ -23,6 +23,8 @@
 		10000000000000000000000E /* RemotePlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* RemotePlayView.swift */; };
 		10000000000000000000000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000014 /* Assets.xcassets */; };
 		100000000000000000000010 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000015 /* SettingsView.swift */; };
+		100000000000000000000011 /* FeedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000016 /* FeedStore.swift */; };
+		100000000000000000000012 /* NewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000017 /* NewsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +49,8 @@
 		200000000000000000000013 /* RemotePlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePlayView.swift; sourceTree = "<group>"; };
 		200000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		200000000000000000000015 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		200000000000000000000016 /* FeedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedStore.swift; sourceTree = "<group>"; };
+		200000000000000000000017 /* NewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -115,6 +119,7 @@
 				30000000000000000000000A /* Registration */,
 				30000000000000000000000C /* RemotePlay */,
 				30000000000000000000000E /* Settings */,
+				30000000000000000000000F /* News */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -190,6 +195,15 @@
 				200000000000000000000015 /* SettingsView.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		30000000000000000000000F /* News */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000016 /* FeedStore.swift */,
+				200000000000000000000017 /* NewsView.swift */,
+			);
+			path = News;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -294,6 +308,8 @@
 				10000000000000000000000D /* RemotePlaySession.swift in Sources */,
 				10000000000000000000000E /* RemotePlayView.swift in Sources */,
 				100000000000000000000010 /* SettingsView.swift in Sources */,
+				100000000000000000000011 /* FeedStore.swift in Sources */,
+				100000000000000000000012 /* NewsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
