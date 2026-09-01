@@ -21,12 +21,21 @@ struct FeedArticle: Codable, Identifiable, Hashable, Sendable {
     let fetchedAt: Date
 }
 
+struct FeedSyncEvent: Codable, Identifiable, Hashable, Sendable {
+    let id: UUID
+    let date: Date
+    let sourceTitle: String
+    let succeeded: Bool
+    let message: String
+}
+
 @MainActor
 final class NewsStore: ObservableObject {
     @Published private(set) var sources: [FeedSource] = []
     @Published private(set) var articles: [FeedArticle] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var refreshMessage: String?
+    @Published private(set) var syncEvents: [FeedSyncEvent] = []
 
     private let snapshotURL: URL?
 
@@ -53,6 +62,7 @@ final class NewsStore: ObservableObject {
         )
         sources.append(source)
         merge(payload.items, from: source, fetchedAt: now)
+        recordSync(source: source.title, succeeded: true, message: "SOURCE CONNECTED")
         refreshMessage = "CONNECTED // \(source.title.uppercased())"
         saveSnapshot()
     }
@@ -84,9 +94,12 @@ final class NewsStore: ObservableObject {
                 sources[index].lastFetchedAt = now
                 sources[index].lastError = nil
                 merge(payload.items, from: sources[index], fetchedAt: now)
+                recordSync(source: sources[index].title, succeeded: true, message: "SYNC COMPLETE // \(payload.items.count) ITEMS")
                 successCount += 1
             } catch {
-                sources[index].lastError = error.localizedDescription.uppercased()
+                let message = error.localizedDescription.uppercased()
+                sources[index].lastError = message
+                recordSync(source: source.title, succeeded: false, message: message)
             }
         }
 
@@ -129,12 +142,18 @@ final class NewsStore: ObservableObject {
               let snapshot = try? JSONDecoder().decode(NewsSnapshot.self, from: data) else { return }
         sources = snapshot.sources
         articles = snapshot.articles
+        syncEvents = snapshot.syncEvents ?? []
     }
 
     private func saveSnapshot() {
         guard let snapshotURL,
-              let data = try? JSONEncoder().encode(NewsSnapshot(sources: sources, articles: articles)) else { return }
+              let data = try? JSONEncoder().encode(NewsSnapshot(sources: sources, articles: articles, syncEvents: syncEvents)) else { return }
         try? data.write(to: snapshotURL, options: .atomic)
+    }
+
+    private func recordSync(source: String, succeeded: Bool, message: String) {
+        syncEvents.insert(FeedSyncEvent(id: UUID(), date: Date(), sourceTitle: source, succeeded: succeeded, message: message), at: 0)
+        syncEvents = Array(syncEvents.prefix(50))
     }
 
     private static func makeSnapshotURL() -> URL? {
@@ -161,6 +180,7 @@ final class NewsStore: ObservableObject {
 private struct NewsSnapshot: Codable {
     let sources: [FeedSource]
     let articles: [FeedArticle]
+    let syncEvents: [FeedSyncEvent]?
 }
 
 struct ParsedFeedItem: Sendable {

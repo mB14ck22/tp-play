@@ -1,10 +1,12 @@
 import SwiftUI
+import WebKit
 
 struct NewsView: View {
     @StateObject private var store = NewsStore()
     @State private var selectedSourceID: UUID?
     @State private var showingSources = false
     @State private var didRequestInitialRefresh = false
+    @State private var openArticle: FeedArticle?
 
     private var visibleArticles: [FeedArticle] {
         guard let selectedSourceID else { return store.articles }
@@ -14,18 +16,22 @@ struct NewsView: View {
     var body: some View {
         ZStack {
             TPPlayTheme.canvas.ignoresSafeArea()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
-                    header
-                    sourceRail
-                    statusLine
-                    content
+            if let openArticle {
+                ArticleBrowserView(article: openArticle) { self.openArticle = nil }
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        header
+                        sourceRail
+                        statusLine
+                        content
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
+                .refreshable { await store.refreshAll() }
             }
-            .refreshable { await store.refreshAll() }
         }
         .fullScreenCover(isPresented: $showingSources) {
             FeedSourcesView(store: store)
@@ -120,7 +126,7 @@ struct NewsView: View {
             NewsEmptyState(title: "NO ARTICLES RECEIVED", message: "REFRESH THIS CHANNEL OR CHECK THE SOURCE STATUS.", actionTitle: "MANAGE SOURCES >", action: { showingSources = true })
         } else {
             ForEach(visibleArticles) { article in
-                NewsArticleCard(article: article)
+                NewsArticleCard(article: article) { openArticle = article }
             }
         }
     }
@@ -128,10 +134,10 @@ struct NewsView: View {
 
 private struct NewsArticleCard: View {
     let article: FeedArticle
-    @Environment(\.openURL) private var openURL
+    let onOpen: () -> Void
 
     var body: some View {
-        Button { openURL(article.link) } label: {
+        Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 0) {
                 articleImage
                 VStack(alignment: .leading, spacing: 10) {
@@ -178,7 +184,7 @@ private struct NewsArticleCard: View {
             .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
         }
         .buttonStyle(NewsPressStyle())
-        .accessibilityHint("Opens the original article")
+        .accessibilityHint("Opens the article inside TP Play")
     }
 
     @ViewBuilder private var articleImage: some View {
@@ -203,6 +209,178 @@ private struct NewsArticleCard: View {
             return date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)).uppercased()
         }
         return date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)).uppercased()
+    }
+}
+
+private struct ArticleBrowserView: View {
+    let article: FeedArticle
+    let onClose: () -> Void
+    @Environment(\.openURL) private var openURL
+    @StateObject private var browser: ArticleBrowserModel
+
+    init(article: FeedArticle, onClose: @escaping () -> Void) {
+        self.article = article
+        self.onClose = onClose
+        _browser = StateObject(wrappedValue: ArticleBrowserModel(url: article.link))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Button(action: onClose) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                        Text("NEWS")
+                    }
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .frame(width: 82, height: 48)
+                }
+                .buttonStyle(AcidButtonStyle(active: true))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(browser.isLoading ? "LOADING SOURCE" : "SOURCE ONLINE")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(browser.errorMessage == nil ? TPPlayTheme.accent : TPPlayTheme.danger)
+                    Text((browser.currentURL ?? article.link).host?.uppercased() ?? "EXTERNAL SOURCE")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.secondaryText)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+
+                Button {
+                    openURL(browser.currentURL ?? article.link)
+                } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 12, weight: .black))
+                        Text("EXT")
+                            .font(.system(size: 8, weight: .black, design: .monospaced))
+                    }
+                    .frame(width: 58, height: 48)
+                }
+                .buttonStyle(AcidButtonStyle())
+                .accessibilityLabel("Open in external browser")
+            }
+            .frame(height: 48)
+            .background(TPPlayTheme.canvas)
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(TPPlayTheme.violet.opacity(0.35))
+                    Rectangle()
+                        .fill(TPPlayTheme.accent)
+                        .frame(width: geometry.size.width * browser.visibleProgress)
+                }
+            }
+            .frame(height: 2)
+            .opacity(browser.isLoading ? 1 : 0)
+
+            ZStack {
+                ArticleWebView(model: browser)
+
+                if let errorMessage = browser.errorMessage {
+                    VStack(spacing: 14) {
+                        Text("SOURCE UNREACHABLE")
+                            .font(.system(size: 15, weight: .black, design: .monospaced))
+                            .foregroundStyle(TPPlayTheme.primaryText)
+                        Text(errorMessage.uppercased())
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(TPPlayTheme.secondaryText)
+                            .multilineTextAlignment(.center)
+                        Button("RETRY >") { browser.reload() }
+                            .frame(width: 132, height: 42)
+                            .buttonStyle(AcidButtonStyle(active: true))
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(TPPlayTheme.canvas)
+                    .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+                    .padding(20)
+                }
+            }
+        }
+    }
+}
+
+private struct ArticleWebView: UIViewRepresentable {
+    @ObservedObject var model: ArticleBrowserModel
+
+    func makeUIView(context: Context) -> WKWebView { model.webView }
+    func updateUIView(_ webView: WKWebView, context: Context) {}
+}
+
+@MainActor
+private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
+    @Published private(set) var currentURL: URL?
+    @Published private(set) var estimatedProgress = 0.0
+    @Published private(set) var isLoading = true
+    @Published private(set) var errorMessage: String?
+
+    let webView: WKWebView
+    private let initialURL: URL
+    private var progressObservation: NSKeyValueObservation?
+
+    var visibleProgress: Double {
+        min(max(estimatedProgress, 0.04), 1)
+    }
+
+    init(url: URL) {
+        initialURL = url
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        currentURL = url
+        super.init()
+
+        webView.navigationDelegate = self
+        webView.isOpaque = false
+        webView.backgroundColor = .black
+        webView.scrollView.backgroundColor = .black
+        progressObservation = webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] webView, _ in
+            Task { @MainActor in self?.estimatedProgress = webView.estimatedProgress }
+        }
+        load(url)
+    }
+
+    func reload() {
+        errorMessage = nil
+        if webView.url == nil {
+            load(currentURL ?? initialURL)
+        } else {
+            webView.reload()
+        }
+    }
+
+    private func load(_ url: URL) {
+        webView.load(URLRequest(url: url, timeoutInterval: 30))
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        isLoading = true
+        errorMessage = nil
+        currentURL = webView.url ?? currentURL
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        isLoading = false
+        estimatedProgress = 1
+        currentURL = webView.url ?? currentURL
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        show(error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        show(error)
+    }
+
+    private func show(_ error: Error) {
+        isLoading = false
+        errorMessage = error.localizedDescription
     }
 }
 
@@ -257,6 +435,10 @@ private struct FeedSourcesView: View {
     @State private var isAdding = false
     @State private var addError: String?
     @State private var pendingRemovalID: UUID?
+
+    private var visibleSyncEvents: [FeedSyncEvent] {
+        Array(store.syncEvents.prefix(12))
+    }
 
     var body: some View {
         ZStack {
@@ -323,11 +505,57 @@ private struct FeedSourcesView: View {
                     } else {
                         ForEach(store.sources) { source in sourceRow(source) }
                     }
+
+                    if !store.syncEvents.isEmpty {
+                        HStack {
+                            Text("// SYNC LOG")
+                            Spacer()
+                            Text("LAST \(min(store.syncEvents.count, 12))")
+                        }
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(TPPlayTheme.accent)
+
+                        VStack(spacing: 0) {
+                            ForEach(visibleSyncEvents) { event in
+                                syncEventRow(event)
+                                if event.id != visibleSyncEvents.last?.id {
+                                    Rectangle().fill(TPPlayTheme.border).frame(height: 1)
+                                }
+                            }
+                        }
+                        .background(TPPlayTheme.surface)
+                        .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
+                    }
                 }
                 .padding(20)
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func syncEventRow(_ event: FeedSyncEvent) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Rectangle()
+                .fill(event.succeeded ? TPPlayTheme.accent : TPPlayTheme.danger)
+                .frame(width: 7, height: 7)
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(event.sourceTitle.uppercased())
+                        .foregroundStyle(TPPlayTheme.primaryText)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(event.date.formatted(date: .omitted, time: .shortened).uppercased())
+                        .foregroundStyle(TPPlayTheme.tertiaryText)
+                }
+                Text(event.message)
+                    .foregroundStyle(event.succeeded ? TPPlayTheme.secondaryText : TPPlayTheme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(size: 8, weight: .bold, design: .monospaced))
+        }
+        .padding(12)
     }
 
     private func sourceRow(_ source: FeedSource) -> some View {
