@@ -5,15 +5,6 @@ private enum AppSection: String, CaseIterable {
     case news = "NEWS"
     case library = "LIBRARY"
     case home = "HOME"
-
-    var symbol: String {
-        switch self {
-        case .play: return "play.fill"
-        case .news: return "bolt.horizontal.fill"
-        case .library: return "square.grid.2x2.fill"
-        case .home: return "house.fill"
-        }
-    }
 }
 
 struct RootView: View {
@@ -49,7 +40,7 @@ private struct AcidDock: View {
             ForEach(Array(AppSection.allCases.enumerated()), id: \.element) { index, item in
                 Button { selection = item } label: {
                     VStack(spacing: 2) {
-                        Image(systemName: item.symbol).font(.system(size: 13, weight: .black))
+                        AngularDockIcon(section: item)
                         Text(item.rawValue)
                             .font(.system(size: 8, weight: .bold, design: .monospaced))
                             .tracking(0.5)
@@ -69,6 +60,88 @@ private struct AcidDock: View {
         }
         .background(TPPlayTheme.canvas)
         .overlay(alignment: .top) { Rectangle().fill(TPPlayTheme.violet).frame(height: 1) }
+    }
+}
+
+private struct AngularDockIcon: View {
+    let section: AppSection
+
+    @ViewBuilder var body: some View {
+        switch section {
+        case .play:
+            ZStack {
+                Rectangle()
+                    .fill(.foreground)
+                    .frame(width: 2, height: 18)
+                    .offset(x: -9)
+                SharpPlayhead()
+                    .fill(.foreground)
+                    .frame(width: 17, height: 18)
+                    .offset(x: 3)
+            }
+            .frame(width: 22, height: 22)
+
+        case .news:
+            ZStack {
+                Rectangle()
+                    .stroke(.foreground, style: StrokeStyle(lineWidth: 2, lineCap: .butt, lineJoin: .miter))
+                Rectangle().fill(.foreground).frame(width: 5, height: 5).offset(x: -5, y: -5)
+                Rectangle().fill(.foreground).frame(width: 6, height: 2).offset(x: 5, y: -6.5)
+                Rectangle().fill(.foreground).frame(width: 6, height: 2).offset(x: 5, y: -2.5)
+                Rectangle().fill(.foreground).frame(width: 14, height: 2).offset(y: 3)
+                Rectangle().fill(.foreground).frame(width: 10, height: 2).offset(x: -2, y: 7)
+            }
+            .frame(width: 20, height: 20)
+
+        case .library:
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Rectangle().fill(.foreground)
+                    Rectangle().fill(.foreground)
+                }
+                HStack(spacing: 4) {
+                    Rectangle().fill(.foreground)
+                    Rectangle().fill(.foreground)
+                }
+            }
+            .frame(width: 20, height: 20)
+
+        case .home:
+            ZStack {
+                AngularHomeOutline()
+                    .stroke(.foreground, style: StrokeStyle(lineWidth: 2, lineCap: .butt, lineJoin: .miter))
+                Rectangle()
+                    .fill(.foreground)
+                    .frame(width: 5, height: 7)
+                    .offset(y: 6.5)
+            }
+            .frame(width: 22, height: 22)
+        }
+    }
+}
+
+private struct SharpPlayhead: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct AngularHomeOutline: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + 1, y: rect.minY + 10))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.minY + 1))
+        path.addLine(to: CGPoint(x: rect.maxX - 1, y: rect.minY + 10))
+        path.move(to: CGPoint(x: rect.minX + 4, y: rect.minY + 7))
+        path.addLine(to: CGPoint(x: rect.minX + 4, y: rect.maxY - 1))
+        path.addLine(to: CGPoint(x: rect.maxX - 4, y: rect.maxY - 1))
+        path.addLine(to: CGPoint(x: rect.maxX - 4, y: rect.minY + 7))
+        return path
     }
 }
 
