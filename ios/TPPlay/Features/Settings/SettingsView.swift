@@ -8,10 +8,7 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("HOME // CONFIG")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .tracking(1.5)
-                    .foregroundStyle(TPPlayTheme.accent)
+                TPPageHeader("HOME // CONFIG")
 
                 VStack(alignment: .leading, spacing: 18) {
                     configHeader("STREAM PROFILE", value: "\(resolution)P / \(fps)FPS")

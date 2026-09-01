@@ -14,6 +14,34 @@ enum TPPlayTheme {
     static let danger = Color(red: 1.0, green: 0.19, blue: 0.37)
 }
 
+struct TPPageHeader<Actions: View>: View {
+    let title: String
+    private let actions: Actions
+
+    init(_ title: String, @ViewBuilder actions: () -> Actions) {
+        self.title = title
+        self.actions = actions()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .tracking(1.5)
+                .foregroundStyle(TPPlayTheme.accent)
+            Spacer()
+            actions
+        }
+        .frame(height: 42)
+    }
+}
+
+extension TPPageHeader where Actions == EmptyView {
+    init(_ title: String) {
+        self.init(title) { EmptyView() }
+    }
+}
+
 struct AcidButtonStyle: ButtonStyle {
     var active = false
 

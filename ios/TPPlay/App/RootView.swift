@@ -87,10 +87,7 @@ private struct PlaceholderSectionView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                Text(section)
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .tracking(1.5)
-                    .foregroundStyle(TPPlayTheme.accent)
+                TPPageHeader(section)
                 Spacer(minLength: 40)
                 VStack(spacing: 18) {
                     Image(systemName: symbol)

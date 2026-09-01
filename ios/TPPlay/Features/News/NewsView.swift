@@ -48,19 +48,14 @@ struct NewsView: View {
                 content
             }
             .padding(.horizontal, 20)
-            .padding(.top, 12)
+            .padding(.top, 20)
             .padding(.bottom, 24)
         }
         .refreshable { await store.refreshAll() }
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text("NEWS // FEED")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .tracking(1.5)
-                .foregroundStyle(TPPlayTheme.accent)
-            Spacer()
+        TPPageHeader("NEWS // FEED") {
             Button {
                 Task { await store.refreshAll() }
             } label: {
@@ -276,18 +271,12 @@ private struct ArticleBrowserView: View {
             HStack(spacing: 0) {
                 toolbarButton(label: "NEWS", symbol: "chevron.left", fill: .accent, action: onClose)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(browser.isLoading ? "LOADING SOURCE" : "SOURCE ONLINE")
-                        .font(.system(size: 8, weight: .black, design: .monospaced))
-                        .tracking(0.8)
-                        .foregroundStyle(browser.errorMessage == nil ? TPPlayTheme.accent : TPPlayTheme.danger)
-                    Text((browser.currentURL ?? article.link).host?.uppercased() ?? "EXTERNAL SOURCE")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(TPPlayTheme.secondaryText)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                Text((browser.currentURL ?? article.link).host?.uppercased() ?? "EXTERNAL SOURCE")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(TPPlayTheme.secondaryText)
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
                 toolbarButton(label: "EXT", symbol: "arrow.up.right", fill: .violet) {
                     openURL(browser.currentURL ?? article.link)
