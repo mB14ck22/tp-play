@@ -265,11 +265,11 @@ private struct ArticleBrowserView: View {
     }
 
     private var windowTopSafeAreaInset: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)?
-            .safeAreaInsets.top ?? 0
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let foregroundScene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first
+        let statusBarHeight = foregroundScene?.statusBarManager?.statusBarFrame.height ?? 0
+        let windowInset = foregroundScene?.windows.map(\.safeAreaInsets.top).max() ?? 0
+        return max(max(statusBarHeight, windowInset), 44)
     }
 
     private var browserToolbar: some View {
