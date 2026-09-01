@@ -12,6 +12,7 @@ extern "C" {
 typedef struct TPPlayDiscovery TPPlayDiscovery;
 typedef struct TPPlayRegistration TPPlayRegistration;
 typedef struct TPPlaySession TPPlaySession;
+typedef struct TPPlayHolepunch TPPlayHolepunch;
 
 typedef enum TPPlayHostState {
 	TP_PLAY_HOST_STATE_UNKNOWN = 0,
@@ -98,6 +99,29 @@ TPPlaySession *tp_play_session_create(
 	size_t registration_key_size,
 	const uint8_t *key,
 	size_t key_size,
+	unsigned int width,
+	unsigned int height,
+	unsigned int fps,
+	unsigned int bitrate,
+	int codec,
+	TPPlaySessionEventCallback event_callback,
+	TPPlayVideoCallback video_callback,
+	TPPlayAudioSettingsCallback audio_settings_callback,
+	TPPlayAudioFrameCallback audio_frame_callback,
+	void *context,
+	int *error_code);
+TPPlayHolepunch *tp_play_holepunch_prepare(
+	const char *psn_access_token,
+	const uint8_t *console_duid,
+	size_t console_duid_size,
+	bool ps5,
+	int *error_code);
+void tp_play_holepunch_destroy(TPPlayHolepunch *holepunch);
+TPPlaySession *tp_play_session_create_remote(
+	bool ps5,
+	TPPlayHolepunch *holepunch,
+	const uint8_t *psn_account_id,
+	size_t psn_account_id_size,
 	unsigned int width,
 	unsigned int height,
 	unsigned int fps,

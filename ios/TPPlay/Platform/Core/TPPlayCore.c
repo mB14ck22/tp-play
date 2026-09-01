@@ -11,6 +11,7 @@
 #include <chiaki/regist.h>
 #include <chiaki/session.h>
 #include <chiaki/opusdecoder.h>
+#include <chiaki/remote/holepunch.h>
 
 struct TPPlayDiscovery {
 	ChiakiDiscoveryService service;
@@ -36,6 +37,12 @@ struct TPPlaySession {
 	TPPlayAudioFrameCallback audio_frame_callback;
 	void *context;
 	bool started;
+	ChiakiLog *holepunch_log;
+};
+
+struct TPPlayHolepunch {
+	ChiakiHolepunchSession session;
+	ChiakiLog *log;
 };
 
 static pthread_once_t tp_play_core_once = PTHREAD_ONCE_INIT;
@@ -296,13 +303,16 @@ void tp_play_registration_destroy(TPPlayRegistration *registration)
 	free(registration);
 }
 
-TPPlaySession *tp_play_session_create(
+static TPPlaySession *tp_play_session_create_common(
 	bool ps5,
 	const char *host,
 	const uint8_t *registration_key,
 	size_t registration_key_size,
 	const uint8_t *key,
 	size_t key_size,
+	ChiakiHolepunchSession holepunch_session,
+	const uint8_t *psn_account_id,
+	size_t psn_account_id_size,
 	unsigned int width,
 	unsigned int height,
 	unsigned int fps,
@@ -317,7 +327,8 @@ TPPlaySession *tp_play_session_create(
 {
 	if(error_code)
 		*error_code = CHIAKI_ERR_SUCCESS;
-	if(!host || !registration_key || registration_key_size != CHIAKI_SESSION_AUTH_SIZE || !key || key_size != 0x10 ||
+	if(!host || (!holepunch_session && (!registration_key || registration_key_size != CHIAKI_SESSION_AUTH_SIZE || !key || key_size != 0x10)) ||
+		(holepunch_session && (!psn_account_id || psn_account_id_size != CHIAKI_PSN_ACCOUNT_ID_SIZE)) ||
 		!event_callback || !video_callback || !audio_settings_callback || !audio_frame_callback)
 	{
 		if(error_code)
@@ -328,6 +339,8 @@ TPPlaySession *tp_play_session_create(
 	TPPlaySession *result = calloc(1, sizeof(*result));
 	if(!result)
 	{
+		if(holepunch_session)
+			chiaki_holepunch_session_fini(holepunch_session);
 		if(error_code)
 			*error_code = CHIAKI_ERR_MEMORY;
 		return NULL;
@@ -345,8 +358,13 @@ TPPlaySession *tp_play_session_create(
 	memset(&info, 0, sizeof(info));
 	info.ps5 = ps5;
 	info.host = host;
-	memcpy(info.regist_key, registration_key, sizeof(info.regist_key));
-	memcpy(info.morning, key, sizeof(info.morning));
+	if(registration_key)
+		memcpy(info.regist_key, registration_key, sizeof(info.regist_key));
+	if(key)
+		memcpy(info.morning, key, sizeof(info.morning));
+	info.holepunch_session = holepunch_session;
+	if(psn_account_id)
+		memcpy(info.psn_account_id, psn_account_id, sizeof(info.psn_account_id));
 	info.video_profile.width = width;
 	info.video_profile.height = height;
 	info.video_profile.max_fps = fps;
@@ -371,6 +389,150 @@ TPPlaySession *tp_play_session_create(
 	ChiakiAudioSink audio_sink;
 	chiaki_opus_decoder_get_sink(&result->audio_decoder, &audio_sink);
 	chiaki_session_set_audio_sink(&result->session, &audio_sink);
+	return result;
+}
+
+TPPlaySession *tp_play_session_create(
+	bool ps5,
+	const char *host,
+	const uint8_t *registration_key,
+	size_t registration_key_size,
+	const uint8_t *key,
+	size_t key_size,
+	unsigned int width,
+	unsigned int height,
+	unsigned int fps,
+	unsigned int bitrate,
+	int codec,
+	TPPlaySessionEventCallback event_callback,
+	TPPlayVideoCallback video_callback,
+	TPPlayAudioSettingsCallback audio_settings_callback,
+	TPPlayAudioFrameCallback audio_frame_callback,
+	void *context,
+	int *error_code)
+{
+	return tp_play_session_create_common(ps5, host, registration_key, registration_key_size, key, key_size,
+		NULL, NULL, 0, width, height, fps, bitrate, codec, event_callback, video_callback,
+		audio_settings_callback, audio_frame_callback, context, error_code);
+}
+
+TPPlayHolepunch *tp_play_holepunch_prepare(
+	const char *psn_access_token,
+	const uint8_t *console_duid,
+	size_t console_duid_size,
+	bool ps5,
+	int *error_code)
+{
+	if(error_code)
+		*error_code = CHIAKI_ERR_SUCCESS;
+	if(!psn_access_token || !console_duid || console_duid_size != 32)
+	{
+		if(error_code)
+			*error_code = CHIAKI_ERR_INVALID_DATA;
+		return NULL;
+	}
+	pthread_once(&tp_play_core_once, tp_play_initialize_core);
+	if(tp_play_core_init_error != CHIAKI_ERR_SUCCESS)
+	{
+		if(error_code)
+			*error_code = tp_play_core_init_error;
+		return NULL;
+	}
+
+	TPPlayHolepunch *result = calloc(1, sizeof(*result));
+	if(!result)
+	{
+		if(error_code)
+			*error_code = CHIAKI_ERR_MEMORY;
+		return NULL;
+	}
+	result->log = malloc(sizeof(*result->log));
+	if(!result->log)
+	{
+		free(result);
+		if(error_code)
+			*error_code = CHIAKI_ERR_MEMORY;
+		return NULL;
+	}
+	chiaki_log_init(result->log, CHIAKI_LOG_ALL & ~CHIAKI_LOG_VERBOSE, chiaki_log_cb_print, NULL);
+	result->session = chiaki_holepunch_session_init(psn_access_token, result->log);
+	if(!result->session)
+	{
+		free(result->log);
+		free(result);
+		if(error_code)
+			*error_code = CHIAKI_ERR_UNKNOWN;
+		return NULL;
+	}
+	chiaki_holepunch_session_force_port_guessing(result->session, true);
+	(void)chiaki_holepunch_upnp_discover(result->session);
+
+	ChiakiErrorCode error = chiaki_holepunch_session_create(result->session);
+	if(error == CHIAKI_ERR_SUCCESS)
+		error = holepunch_session_create_offer(result->session);
+	if(error == CHIAKI_ERR_SUCCESS)
+		error = chiaki_holepunch_session_start(result->session, console_duid,
+			ps5 ? CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5 : CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS4);
+	if(error == CHIAKI_ERR_SUCCESS)
+		error = chiaki_holepunch_session_punch_hole(result->session, CHIAKI_HOLEPUNCH_PORT_TYPE_CTRL);
+	if(error != CHIAKI_ERR_SUCCESS)
+	{
+		chiaki_holepunch_session_fini(result->session);
+		free(result->log);
+		free(result);
+		if(error_code)
+			*error_code = error;
+		return NULL;
+	}
+	return result;
+}
+
+void tp_play_holepunch_destroy(TPPlayHolepunch *holepunch)
+{
+	if(!holepunch)
+		return;
+	if(holepunch->session)
+		chiaki_holepunch_session_fini(holepunch->session);
+	free(holepunch->log);
+	free(holepunch);
+}
+
+TPPlaySession *tp_play_session_create_remote(
+	bool ps5,
+	TPPlayHolepunch *holepunch,
+	const uint8_t *psn_account_id,
+	size_t psn_account_id_size,
+	unsigned int width,
+	unsigned int height,
+	unsigned int fps,
+	unsigned int bitrate,
+	int codec,
+	TPPlaySessionEventCallback event_callback,
+	TPPlayVideoCallback video_callback,
+	TPPlayAudioSettingsCallback audio_settings_callback,
+	TPPlayAudioFrameCallback audio_frame_callback,
+	void *context,
+	int *error_code)
+{
+	if(!holepunch || !holepunch->session || !psn_account_id || psn_account_id_size != CHIAKI_PSN_ACCOUNT_ID_SIZE)
+	{
+		if(error_code)
+			*error_code = CHIAKI_ERR_INVALID_DATA;
+		return NULL;
+	}
+	ChiakiHolepunchSession native = holepunch->session;
+	ChiakiLog *holepunch_log = holepunch->log;
+	holepunch->session = NULL;
+	holepunch->log = NULL;
+	free(holepunch);
+	TPPlaySession *result = tp_play_session_create_common(ps5, "", NULL, 0, NULL, 0, native,
+		psn_account_id, psn_account_id_size, width, height, fps, bitrate, codec,
+		event_callback, video_callback, audio_settings_callback, audio_frame_callback,
+		context, error_code);
+	if(result)
+		result->holepunch_log = holepunch_log;
+	else
+		free(holepunch_log);
 	return result;
 }
 
@@ -401,6 +563,7 @@ void tp_play_session_destroy(TPPlaySession *session)
 	}
 	chiaki_session_fini(&session->session);
 	chiaki_opus_decoder_fini(&session->audio_decoder);
+	free(session->holepunch_log);
 	free(session);
 }
 

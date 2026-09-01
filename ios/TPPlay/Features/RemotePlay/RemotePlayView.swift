@@ -7,8 +7,14 @@ struct RemotePlayView: View {
     @StateObject private var session: RemotePlaySession
     @State private var loginPIN = ""
 
-    init(console: RegisteredConsole, configuration: StreamConfiguration = .highQuality) {
-        _session = StateObject(wrappedValue: RemotePlaySession(console: console, configuration: configuration))
+    init(
+        console: RegisteredConsole,
+        configuration: StreamConfiguration = .highQuality,
+        remote: RemoteConsoleConnection? = nil
+    ) {
+        _session = StateObject(
+            wrappedValue: RemotePlaySession(console: console, configuration: configuration, remote: remote)
+        )
     }
 
     var body: some View {

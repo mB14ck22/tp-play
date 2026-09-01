@@ -25,6 +25,7 @@
 		100000000000000000000010 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000015 /* SettingsView.swift */; };
 		100000000000000000000011 /* FeedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000016 /* FeedStore.swift */; };
 		100000000000000000000012 /* NewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000017 /* NewsView.swift */; };
+		100000000000000000000013 /* CredentialTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000018 /* CredentialTransfer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +52,7 @@
 		200000000000000000000015 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		200000000000000000000016 /* FeedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedStore.swift; sourceTree = "<group>"; };
 		200000000000000000000017 /* NewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsView.swift; sourceTree = "<group>"; };
+		200000000000000000000018 /* CredentialTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialTransfer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -169,6 +171,7 @@
 				20000000000000000000000A /* TPPlay-Bridging-Header.h */,
 				20000000000000000000000B /* ConsoleDiscoveryStore.swift */,
 				20000000000000000000000D /* RegisteredConsoleStore.swift */,
+				200000000000000000000018 /* CredentialTransfer.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -310,6 +313,7 @@
 				100000000000000000000010 /* SettingsView.swift in Sources */,
 				100000000000000000000011 /* FeedStore.swift in Sources */,
 				100000000000000000000012 /* NewsView.swift in Sources */,
+				100000000000000000000013 /* CredentialTransfer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -3,8 +3,9 @@ import SwiftUI
 struct ConsoleLibraryView: View {
     @StateObject private var discovery = ConsoleDiscoveryStore()
     @StateObject private var registeredConsoles = RegisteredConsoleStore()
+    @StateObject private var remoteCredentials = RemoteCredentialStore()
     @State private var consoleToRegister: DiscoveredConsole?
-    @State private var consoleToPlay: RegisteredConsole?
+    @State private var playRequest: ConsolePlayRequest?
     @State private var consoleToRemove: RegisteredConsole?
     @State private var wakeError: String?
     @State private var showingManualConsole = false
@@ -47,8 +48,12 @@ struct ConsoleLibraryView: View {
                 showingManualConsole = false
             }
         }
-        .fullScreenCover(item: $consoleToPlay) { console in
-            RemotePlayView(console: console, configuration: streamConfiguration)
+        .fullScreenCover(item: $playRequest) { request in
+            RemotePlayView(
+                console: request.console,
+                configuration: streamConfiguration,
+                remote: request.remote
+            )
         }
         .confirmationDialog("REMOVE CONSOLE?", isPresented: Binding(
             get: { consoleToRemove != nil },
@@ -119,13 +124,20 @@ struct ConsoleLibraryView: View {
             sectionHeader("MY CONSOLES", detail: "\(registeredConsoles.consoles.count)")
             ForEach(registeredConsoles.consoles) { registered in
                 let nearby = discovery.console(matching: registered)
-                RegisteredConsoleCard(console: registered, nearby: nearby, onPlay: {
+                let remote = remoteCredentials.connection(for: registered)
+                RegisteredConsoleCard(console: registered, nearby: nearby, remoteAvailable: remote != nil, onPlay: {
                     let current = registered.updatedAddress(nearby?.address)
                     registeredConsoles.updateAddressIfNeeded(current)
-                    if nearby?.state == .standby || nearby == nil {
+                    if nearby == nil, let remote {
+                        playRequest = ConsolePlayRequest(console: current, remote: remote)
+                    } else if nearby?.state == .standby || nearby == nil {
+                        guard !current.address.isEmpty else {
+                            wakeError = "The saved PSN credential is unavailable or expired."
+                            return
+                        }
                         wakeError = discovery.wake(current)
                     } else {
-                        consoleToPlay = current
+                        playRequest = ConsolePlayRequest(console: current, remote: nil)
                     }
                 }, onRemove: { consoleToRemove = registered })
             }
@@ -167,6 +179,7 @@ struct ConsoleLibraryView: View {
 private struct RegisteredConsoleCard: View {
     let console: RegisteredConsole
     let nearby: DiscoveredConsole?
+    let remoteAvailable: Bool
     let onPlay: () -> Void
     let onRemove: () -> Void
 
@@ -214,7 +227,9 @@ private struct RegisteredConsoleCard: View {
         .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
     }
 
-    private var canStartSession: Bool { nearby?.state == .ready || nearby?.state == .unknown }
+    private var canStartSession: Bool {
+        remoteAvailable || nearby?.state == .ready || nearby?.state == .unknown
+    }
     private var statusText: String {
         guard let nearby else { return "SAVED // OFFLINE" }
         switch nearby.state {
@@ -223,6 +238,12 @@ private struct RegisteredConsoleCard: View {
         case .unknown: return "AVAILABLE"
         }
     }
+}
+
+private struct ConsolePlayRequest: Identifiable {
+    let id = UUID()
+    let console: RegisteredConsole
+    let remote: RemoteConsoleConnection?
 }
 
 private struct NearbyConsoleCard: View {
