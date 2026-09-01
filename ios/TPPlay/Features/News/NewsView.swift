@@ -271,10 +271,18 @@ private struct ArticleBrowserView: View {
             HStack(spacing: 0) {
                 toolbarButton(label: "NEWS", symbol: "chevron.left", fill: .accent, action: onClose)
 
-                Text((browser.currentURL ?? article.link).host?.uppercased() ?? "EXTERNAL SOURCE")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(TPPlayTheme.secondaryText)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(browserTitle)
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(TPPlayTheme.accent)
+                        .lineLimit(1)
+                    Text((browser.currentURL ?? article.link).absoluteString)
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                     .padding(.horizontal, 12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
@@ -298,6 +306,17 @@ private struct ArticleBrowserView: View {
             .opacity(browser.isLoading ? 1 : 0)
         }
         .background(TPPlayTheme.canvas)
+    }
+
+    private var browserTitle: String {
+        if let pageTitle = browser.pageTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !pageTitle.isEmpty {
+            return pageTitle.uppercased()
+        }
+        if browser.currentURL == nil || browser.currentURL == article.link {
+            return article.sourceTitle.uppercased()
+        }
+        return browser.currentURL?.host?.uppercased() ?? article.sourceTitle.uppercased()
     }
 
     private func toolbarButton(
@@ -383,6 +402,7 @@ private struct ArticleWebView: UIViewRepresentable {
 @MainActor
 private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published private(set) var currentURL: URL?
+    @Published private(set) var pageTitle: String?
     @Published private(set) var estimatedProgress = 0.0
     @Published private(set) var isLoading = true
     @Published private(set) var errorMessage: String?
@@ -392,6 +412,8 @@ private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigatio
     private let initialURL: URL
     private var progressObservation: NSKeyValueObservation?
     private var canGoBackObservation: NSKeyValueObservation?
+    private var titleObservation: NSKeyValueObservation?
+    private var urlObservation: NSKeyValueObservation?
 
     var visibleProgress: Double {
         min(max(estimatedProgress, 0.04), 1)
@@ -416,6 +438,16 @@ private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigatio
         canGoBackObservation = webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] webView, _ in
             Task { @MainActor in self?.canGoBack = webView.canGoBack }
         }
+        titleObservation = webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, _ in
+            Task { @MainActor in self?.pageTitle = webView.title }
+        }
+        urlObservation = webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, _ in
+            Task { @MainActor in
+                if let url = webView.url {
+                    self?.currentURL = url
+                }
+            }
+        }
         load(url)
     }
 
@@ -435,12 +467,14 @@ private final class ArticleBrowserModel: NSObject, ObservableObject, WKNavigatio
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         isLoading = true
         errorMessage = nil
+        pageTitle = nil
         currentURL = webView.url ?? currentURL
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isLoading = false
         estimatedProgress = 1
+        pageTitle = webView.title
         currentURL = webView.url ?? currentURL
     }
 
