@@ -1,5 +1,55 @@
 import SwiftUI
 
+@MainActor
+final class TPTerminalTitleAnimator: ObservableObject {
+    static let shared = TPTerminalTitleAnimator()
+
+    @Published private(set) var renderedTitle = ""
+    @Published private(set) var cursorVisible = false
+
+    private var targetTitle = ""
+    private var animationTask: Task<Void, Never>?
+
+    func transition(to title: String, reduceMotion: Bool) {
+        guard targetTitle != title else { return }
+        targetTitle = title
+        animationTask?.cancel()
+
+        if reduceMotion {
+            renderedTitle = title
+            cursorVisible = false
+            return
+        }
+
+        animationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            cursorVisible = true
+
+            while !renderedTitle.isEmpty {
+                guard !Task.isCancelled else { return }
+                renderedTitle.removeLast()
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+
+            for character in title {
+                guard !Task.isCancelled else { return }
+                renderedTitle.append(character)
+                try? await Task.sleep(for: .milliseconds(8))
+            }
+
+            for _ in 0..<2 {
+                guard !Task.isCancelled else { return }
+                cursorVisible = false
+                try? await Task.sleep(for: .milliseconds(55))
+                guard !Task.isCancelled else { return }
+                cursorVisible = true
+                try? await Task.sleep(for: .milliseconds(55))
+            }
+            cursorVisible = false
+        }
+    }
+}
+
 enum TPPlayTheme {
     static let canvas = Color.black
     static let surface = Color(red: 0.035, green: 0.035, blue: 0.045)
@@ -17,6 +67,8 @@ enum TPPlayTheme {
 struct TPPageHeader<Actions: View>: View {
     let title: String
     private let actions: Actions
+    @ObservedObject private var titleAnimator = TPTerminalTitleAnimator.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(_ title: String, @ViewBuilder actions: () -> Actions) {
         self.title = title
@@ -25,7 +77,7 @@ struct TPPageHeader<Actions: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            Text(title)
+            Text(titleAnimator.renderedTitle + (titleAnimator.cursorVisible ? "|" : ""))
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .tracking(1.5)
                 .foregroundStyle(TPPlayTheme.accent)
@@ -33,12 +85,65 @@ struct TPPageHeader<Actions: View>: View {
             actions
         }
         .frame(height: 42)
+        .onAppear {
+            titleAnimator.transition(to: title, reduceMotion: reduceMotion)
+        }
+        .onChange(of: title) { _, newTitle in
+            titleAnimator.transition(to: newTitle, reduceMotion: reduceMotion)
+        }
     }
 }
 
 extension TPPageHeader where Actions == EmptyView {
     init(_ title: String) {
         self.init(title) { EmptyView() }
+    }
+}
+
+struct TPErrorDialog: View {
+    let title: String
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Rectangle()
+                    .fill(TPPlayTheme.onAccent)
+                    .frame(width: 8, height: 8)
+                Text("// \(title)")
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .tracking(1)
+                Spacer()
+                Text("ERR")
+                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                    .tracking(1)
+            }
+            .foregroundStyle(TPPlayTheme.onAccent)
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .background(TPPlayTheme.danger)
+
+            VStack(alignment: .leading, spacing: 18) {
+                Text(message.uppercased())
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .tracking(0.4)
+                    .foregroundStyle(TPPlayTheme.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button("ACKNOWLEDGE >", action: dismiss)
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(TPPlayTheme.onAccent)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(TPPlayTheme.danger)
+                    .overlay { Rectangle().stroke(TPPlayTheme.danger, lineWidth: 1) }
+            }
+            .padding(16)
+            .background(TPPlayTheme.surfaceRaised)
+        }
+        .overlay { Rectangle().stroke(TPPlayTheme.danger, lineWidth: 2) }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -65,5 +170,27 @@ struct AcidFieldStyle: TextFieldStyle {
             .frame(height: 46)
             .background(TPPlayTheme.surface)
             .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
+    }
+}
+
+struct TPTerminalActivityGlyph: View {
+    var color = TPPlayTheme.accent
+    @State private var frameIndex = 0
+
+    private let frames = ["|", "\\", "-", "/"]
+
+    var body: some View {
+        Text(frames[frameIndex])
+            .font(.system(size: 14, weight: .black, design: .monospaced))
+            .foregroundStyle(color)
+            .frame(width: 16, height: 16)
+            .accessibilityHidden(true)
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(70))
+                    guard !Task.isCancelled else { return }
+                    frameIndex = (frameIndex + 1) % frames.count
+                }
+            }
     }
 }

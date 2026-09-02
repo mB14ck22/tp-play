@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #endif
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined(__APPLE__)
 #include <ifaddrs.h>
 #include <string.h>
 #include <errno.h>
@@ -58,8 +58,9 @@ static inline const char *sockaddr_str(struct sockaddr *addr, char *addr_buf, si
 
 static inline int sendto_broadcast(ChiakiLog *log, chiaki_socket_t s, const void *msg, size_t len, int flags, const struct sockaddr *to, socklen_t tolen)
 {
-#ifdef __FreeBSD__
-	// see https://wiki.freebsd.org/NetworkRFCCompliance
+#if defined(__FreeBSD__) || defined(__APPLE__)
+	// Apple platforms and FreeBSD do not reliably route the limited broadcast
+	// address. Send to every active interface's directed broadcast instead.
 	if(to->sa_family == AF_INET && ((const struct sockaddr_in *)to)->sin_addr.s_addr == htonl(INADDR_BROADCAST))
 	{
 		struct ifaddrs *ifap;
@@ -73,15 +74,17 @@ static inline int sendto_broadcast(ChiakiLog *log, chiaki_socket_t s, const void
 		{
 			if(!a->ifa_broadaddr)
 				continue;
-			if(!(a->ifa_flags & IFF_BROADCAST))
+			if((a->ifa_flags & (IFF_UP | IFF_RUNNING | IFF_BROADCAST | IFF_LOOPBACK)) !=
+					(IFF_UP | IFF_RUNNING | IFF_BROADCAST))
 				continue;
 			if(a->ifa_broadaddr->sa_family != to->sa_family)
 				continue;
-			((struct sockaddr_in *)a->ifa_broadaddr)->sin_port = ((const struct sockaddr_in *)to)->sin_port;
+			struct sockaddr_in broadcast_addr = *(const struct sockaddr_in *)a->ifa_broadaddr;
+			broadcast_addr.sin_port = ((const struct sockaddr_in *)to)->sin_port;
 			char addr_buf[64];
-			const char *addr_str = sockaddr_str(a->ifa_broadaddr, addr_buf, sizeof(addr_buf));
+			const char *addr_str = sockaddr_str((struct sockaddr *)&broadcast_addr, addr_buf, sizeof(addr_buf));
 			CHIAKI_LOGV(log, "Broadcast to %s on %s", addr_str ? addr_str : "(null)", a->ifa_name);
-			int sr = sendto(s, msg, len, flags, a->ifa_broadaddr, sizeof(*a->ifa_broadaddr));
+			int sr = sendto(s, msg, len, flags, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
 			if(sr < 0)
 			{
 				CHIAKI_LOGE(log, "Broadcast on iface %s failed: %s", a->ifa_name, strerror(errno));

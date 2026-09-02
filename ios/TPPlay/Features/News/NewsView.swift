@@ -40,18 +40,28 @@ struct NewsView: View {
     }
 
     private var feedView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
                 header
                 sourceRail
-                statusLine
-                content
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 24)
+            .padding(.bottom, 10)
+            .background(TPPlayTheme.canvas)
+            .overlay(alignment: .bottom) { Rectangle().fill(TPPlayTheme.border).frame(height: 1) }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    statusLine
+                    content
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 24)
+            }
+            .refreshable { await store.refreshAll() }
         }
-        .refreshable { await store.refreshAll() }
     }
 
     private var header: some View {
@@ -60,7 +70,7 @@ struct NewsView: View {
                 Task { await store.refreshAll() }
             } label: {
                 Group {
-                    if store.isRefreshing { ProgressView().tint(TPPlayTheme.primaryText) }
+                    if store.isRefreshing { TPTerminalActivityGlyph(color: TPPlayTheme.primaryText) }
                     else { Image(systemName: "arrow.clockwise") }
                 }
                 .font(.system(size: 14, weight: .black))
@@ -517,7 +527,7 @@ private struct NewsEmptyState: View {
                     .frame(minHeight: 44)
                     .buttonStyle(AcidButtonStyle(active: true))
             } else {
-                ProgressView().tint(TPPlayTheme.accent)
+                TPTerminalActivityGlyph()
             }
         }
         .frame(maxWidth: .infinity)
@@ -578,7 +588,7 @@ private struct FeedSourcesView: View {
                             .onSubmit { addSource() }
                         Button { addSource() } label: {
                             HStack {
-                                if isAdding { ProgressView().tint(TPPlayTheme.onAccent) }
+                                if isAdding { TPTerminalActivityGlyph(color: TPPlayTheme.onAccent) }
                                 Text(isAdding ? "VALIDATING SOURCE..." : "CONNECT SOURCE >")
                             }
                             .frame(maxWidth: .infinity, minHeight: 46)

@@ -1,30 +1,34 @@
 import SwiftUI
 
 private enum AppSection: String, CaseIterable {
-    case play = "PLAY"
+    case community = "COMMUNITY"
     case news = "NEWS"
+    case play = "PLAY"
     case library = "LIBRARY"
-    case home = "HOME"
+    case settings = "SETTINGS"
 }
 
 struct RootView: View {
-    @State private var selection = AppSection.play
+    @State private var selection = AppSection.community
 
     var body: some View {
         ZStack(alignment: .bottom) {
             TPPlayTheme.canvas.ignoresSafeArea()
             Group {
                 switch selection {
+                case .community: CommunityView()
                 case .play: ConsoleLibraryView()
                 case .news: NewsView()
-                case .library: PlaceholderSectionView(section: "LIBRARY // TROPHIES", title: "TROPHY DATA OFFLINE", message: "CONNECT A DATA SOURCE TO BUILD YOUR LIBRARY.", symbol: "square.grid.2x2.fill")
-                case .home: HomeView()
+                case .library: LibraryView()
+                case .settings: HomeView()
                 }
             }
             .padding(.bottom, 72)
 
             AcidDock(selection: $selection)
+                .frame(maxWidth: .infinity)
                 .frame(height: 72)
+                .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
         }
         .ignoresSafeArea(edges: .bottom)
         .preferredColorScheme(.dark)
@@ -36,30 +40,33 @@ private struct AcidDock: View {
     @Binding var selection: AppSection
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(AppSection.allCases.enumerated()), id: \.element) { index, item in
-                Button { selection = item } label: {
-                    VStack(spacing: 2) {
+        GeometryReader { geometry in
+            let itemWidth = geometry.size.width / CGFloat(AppSection.allCases.count)
+
+            HStack(spacing: 0) {
+                ForEach(Array(AppSection.allCases.enumerated()), id: \.element) { index, item in
+                    Button { selection = item } label: {
                         AngularDockIcon(section: item)
-                        Text(item.rawValue)
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .tracking(0.5)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .foregroundStyle(selection == item ? TPPlayTheme.onAccent : TPPlayTheme.primaryText)
-                    .background(selection == item ? TPPlayTheme.accent : TPPlayTheme.surface)
-                    .overlay(alignment: .leading) {
-                        if index > 0 {
-                            Rectangle().fill(TPPlayTheme.violet).frame(width: 1)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .foregroundStyle(selection == item ? TPPlayTheme.onAccent : TPPlayTheme.primaryText)
+                        .background(selection == item ? TPPlayTheme.accent : TPPlayTheme.surface)
+                        .overlay(alignment: .leading) {
+                            if index > 0 {
+                                Rectangle().fill(TPPlayTheme.violet).frame(width: 1)
+                            }
                         }
                     }
+                    .frame(width: itemWidth, height: geometry.size.height)
+                    .contentShape(Rectangle())
+                    .buttonStyle(DockPressStyle())
+                    .accessibilityLabel(item.rawValue.capitalized)
+                    .accessibilityAddTraits(selection == item ? .isSelected : [])
                 }
-                .buttonStyle(DockPressStyle())
-                .accessibilityAddTraits(selection == item ? .isSelected : [])
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .background(TPPlayTheme.canvas)
+            .overlay(alignment: .top) { Rectangle().fill(TPPlayTheme.violet).frame(height: 1) }
         }
-        .background(TPPlayTheme.canvas)
-        .overlay(alignment: .top) { Rectangle().fill(TPPlayTheme.violet).frame(height: 1) }
     }
 }
 
@@ -68,6 +75,25 @@ private struct AngularDockIcon: View {
 
     @ViewBuilder var body: some View {
         switch section {
+        case .community:
+            ZStack {
+                Rectangle()
+                    .stroke(.foreground, style: StrokeStyle(lineWidth: 2, lineCap: .butt, lineJoin: .miter))
+                    .frame(width: 18, height: 14)
+                    .offset(y: -2)
+                SharpChatTail()
+                    .fill(.foreground)
+                    .frame(width: 6, height: 6)
+                    .offset(x: -5, y: 7)
+                HStack(spacing: 3) {
+                    Rectangle().fill(.foreground).frame(width: 3, height: 3)
+                    Rectangle().fill(.foreground).frame(width: 3, height: 3)
+                    Rectangle().fill(.foreground).frame(width: 3, height: 3)
+                }
+                .offset(y: -2)
+            }
+            .frame(width: 22, height: 22)
+
         case .play:
             ZStack {
                 Rectangle()
@@ -106,15 +132,9 @@ private struct AngularDockIcon: View {
             }
             .frame(width: 20, height: 20)
 
-        case .home:
-            ZStack {
-                AngularHomeOutline()
-                    .stroke(.foreground, style: StrokeStyle(lineWidth: 2, lineCap: .butt, lineJoin: .miter))
-                Rectangle()
-                    .fill(.foreground)
-                    .frame(width: 5, height: 7)
-                    .offset(y: 6.5)
-            }
+        case .settings:
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 20, weight: .black))
             .frame(width: 22, height: 22)
         }
     }
@@ -131,16 +151,12 @@ private struct SharpPlayhead: Shape {
     }
 }
 
-private struct AngularHomeOutline: Shape {
+private struct SharpChatTail: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX + 1, y: rect.minY + 10))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.minY + 1))
-        path.addLine(to: CGPoint(x: rect.maxX - 1, y: rect.minY + 10))
-        path.move(to: CGPoint(x: rect.minX + 4, y: rect.minY + 7))
-        path.addLine(to: CGPoint(x: rect.minX + 4, y: rect.maxY - 1))
-        path.addLine(to: CGPoint(x: rect.maxX - 4, y: rect.maxY - 1))
-        path.addLine(to: CGPoint(x: rect.maxX - 4, y: rect.minY + 7))
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         return path
     }
 }
@@ -158,9 +174,15 @@ private struct PlaceholderSectionView: View {
     let symbol: String
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                TPPageHeader(section)
+        VStack(spacing: 0) {
+            TPPageHeader(section)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 10)
+                .background(TPPlayTheme.canvas)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
                 Spacer(minLength: 40)
                 VStack(spacing: 18) {
                     Image(systemName: symbol)
@@ -181,8 +203,10 @@ private struct PlaceholderSectionView: View {
                 .background(TPPlayTheme.surface)
                 .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
                 Spacer(minLength: 80)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
-            .padding(20)
         }
         .background(TPPlayTheme.canvas)
     }

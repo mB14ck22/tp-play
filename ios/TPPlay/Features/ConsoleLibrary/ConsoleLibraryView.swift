@@ -9,6 +9,7 @@ struct ConsoleLibraryView: View {
     @State private var playRequest: ConsolePlayRequest?
     @State private var consoleToRemove: RegisteredConsole?
     @State private var wakeError: String?
+    @State private var connectingConsoleID: String?
     @State private var showingManualConsole = false
     @AppStorage("streamResolution") private var streamResolution = 1080
     @AppStorage("streamFPS") private var streamFPS = 60
@@ -17,24 +18,44 @@ struct ConsoleLibraryView: View {
     var body: some View {
         ZStack {
             TPPlayTheme.canvas.ignoresSafeArea()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    topBar
-                    hero
-                    if !registeredConsoles.consoles.isEmpty { consoleSection }
-                    else { emptyConsoleState }
-                    if let storageError = registeredConsoles.storageError {
-                        Text("KEYCHAIN ERROR // \(storageError)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(TPPlayTheme.danger)
+            VStack(spacing: 0) {
+                header
+                    .frame(maxWidth: 720, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                    .padding(.bottom, 10)
+                    .background(TPPlayTheme.canvas)
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        if !registeredConsoles.consoles.isEmpty { consoleSection }
+                        else { emptyConsoleState }
+                        if let storageError = registeredConsoles.storageError {
+                            Text("KEYCHAIN ERROR // \(storageError)")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(TPPlayTheme.danger)
+                        }
                     }
+                    .frame(maxWidth: 720, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
+                    .padding(.bottom, 28)
                 }
-                .frame(maxWidth: 720, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 28)
+                .refreshable { discovery.restart() }
             }
-            .refreshable { discovery.restart() }
+            .allowsHitTesting(wakeError == nil)
+
+            if let wakeError {
+                Color.black.opacity(0.76)
+                    .ignoresSafeArea()
+                TPErrorDialog(title: "CONNECTION ERROR", message: wakeError) {
+                    self.wakeError = nil
+                }
+                .frame(maxWidth: 420)
+                .padding(20)
+                .transition(.opacity)
+                .zIndex(2)
+            }
         }
         .fullScreenCover(item: $consoleToRegister) { console in
             ConsoleRegistrationView(console: console, store: registeredConsoles)
@@ -80,12 +101,6 @@ struct ConsoleLibraryView: View {
         } message: {
             Text("The console must be linked again before Remote Play can start.")
         }
-        .alert("WAKE FAILED", isPresented: Binding(
-            get: { wakeError != nil },
-            set: { if !$0 { wakeError = nil } }
-        )) {
-            Button("OK", role: .cancel) { wakeError = nil }
-        } message: { Text(wakeError ?? "Unknown error") }
         .onChange(of: registeredConsoles.consoles, initial: true) { _, consoles in
             discovery.updateRegisteredConsoles(consoles)
         }
@@ -96,9 +111,8 @@ struct ConsoleLibraryView: View {
         return StreamConfiguration(width: height == 1080 ? 1920 : 1280, height: height, fps: UInt32(streamFPS), bitrate: UInt32(streamBitrate))
     }
 
-    private var topBar: some View {
-        HStack(spacing: 8) {
-            Spacer()
+    private var header: some View {
+        TPPageHeader("PLAY // CONSOLES") {
             HStack(spacing: 7) {
                 Rectangle()
                     .fill(discovery.errorMessage == nil ? TPPlayTheme.accent : TPPlayTheme.danger)
@@ -108,29 +122,16 @@ struct ConsoleLibraryView: View {
             .font(.system(size: 10, weight: .bold, design: .monospaced))
             .tracking(0.8)
             .foregroundStyle(TPPlayTheme.primaryText)
-            .frame(width: 82, height: 38)
+            .frame(width: 82, height: 42)
             .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
 
             Button { showingManualConsole = true } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 16, weight: .black))
-                    .frame(width: 38, height: 38)
+                    .frame(width: 42, height: 42)
             }
             .buttonStyle(AcidButtonStyle(active: true))
             .accessibilityLabel("Add console")
-        }
-    }
-
-    private var hero: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("READY TO PLAY")
-                .font(.system(size: 30, weight: .black, design: .monospaced))
-                .tracking(-1)
-                .foregroundStyle(TPPlayTheme.primaryText)
-            Text("SELECT A CONSOLE. START A LOCAL SESSION.")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .tracking(0.8)
-                .foregroundStyle(TPPlayTheme.secondaryText)
         }
     }
 
@@ -139,23 +140,45 @@ struct ConsoleLibraryView: View {
             sectionHeader("MY CONSOLES", detail: "\(registeredConsoles.consoles.count)")
             ForEach(registeredConsoles.consoles) { registered in
                 let nearby = discovery.console(matching: registered)
-                let remote = remoteCredentials.connection(for: registered)
-                RegisteredConsoleCard(console: registered, nearby: nearby, remoteAvailable: remote != nil, onPlay: {
-                    let current = registered.updatedAddress(nearby?.address)
-                    registeredConsoles.updateAddressIfNeeded(current)
-                    if nearby == nil, let remote {
-                        playRequest = ConsolePlayRequest(console: current, remote: remote)
-                    } else if nearby?.state == .standby || nearby == nil {
-                        guard !current.address.isEmpty else {
-                            wakeError = "The saved PSN credential is unavailable or expired."
-                            return
-                        }
-                        wakeError = discovery.wake(current)
-                    } else {
-                        playRequest = ConsolePlayRequest(console: current, remote: nil)
-                    }
-                }, onRemove: { consoleToRemove = registered })
+                let remoteAvailable = remoteCredentials.canAttemptRemoteConnection(for: registered)
+                RegisteredConsoleCard(
+                    console: registered,
+                    nearby: nearby,
+                    remoteAvailable: remoteAvailable,
+                    isConnecting: connectingConsoleID == registered.id,
+                    onPlay: { startSession(for: registered, nearby: nearby, remoteAvailable: remoteAvailable) },
+                    onRemove: { consoleToRemove = registered }
+                )
             }
+        }
+    }
+
+    private func startSession(for registered: RegisteredConsole, nearby: DiscoveredConsole?, remoteAvailable: Bool) {
+        let current = registered.updatedAddress(nearby?.address)
+        registeredConsoles.updateAddressIfNeeded(current)
+
+        if nearby == nil, remoteAvailable {
+            connectingConsoleID = registered.id
+            Task { @MainActor in
+                defer { connectingConsoleID = nil }
+                do {
+                    guard let remote = try await remoteCredentials.connection(for: current) else {
+                        wakeError = "No matching remote console credential was found."
+                        return
+                    }
+                    playRequest = ConsolePlayRequest(console: current, remote: remote)
+                } catch {
+                    wakeError = error.localizedDescription
+                }
+            }
+        } else if nearby?.state == .standby || nearby == nil {
+            guard !current.address.isEmpty else {
+                wakeError = "No saved remote connection is available for this console."
+                return
+            }
+            wakeError = discovery.wake(current)
+        } else {
+            playRequest = ConsolePlayRequest(console: current, remote: nil)
         }
     }
 
@@ -192,6 +215,7 @@ private struct RegisteredConsoleCard: View {
     let console: RegisteredConsole
     let nearby: DiscoveredConsole?
     let remoteAvailable: Bool
+    let isConnecting: Bool
     let onPlay: () -> Void
     let onRemove: () -> Void
 
@@ -206,7 +230,7 @@ private struct RegisteredConsoleCard: View {
                         .lineLimit(1)
                     Text(statusText.uppercased())
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(nearby == nil ? TPPlayTheme.secondaryText : TPPlayTheme.accent)
+                        .foregroundStyle(remoteAvailable || nearby != nil ? TPPlayTheme.accent : TPPlayTheme.secondaryText)
                         .lineLimit(1)
                     Text(console.address)
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -226,7 +250,10 @@ private struct RegisteredConsoleCard: View {
 
             Button(action: onPlay) {
                 HStack {
-                    Text(canStartSession ? "START SESSION" : "WAKE CONSOLE")
+                    if isConnecting {
+                        TPTerminalActivityGlyph(color: TPPlayTheme.onAccent)
+                    }
+                    Text(isConnecting ? "REFRESHING PSN" : (canStartSession ? "START SESSION" : "WAKE CONSOLE"))
                     Spacer()
                     Text(">")
                 }
@@ -234,6 +261,7 @@ private struct RegisteredConsoleCard: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(AcidButtonStyle(active: true))
+            .disabled(isConnecting)
         }
         .background(TPPlayTheme.surface)
         .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
@@ -243,7 +271,7 @@ private struct RegisteredConsoleCard: View {
         remoteAvailable || nearby?.state == .ready || nearby?.state == .unknown
     }
     private var statusText: String {
-        guard let nearby else { return "SAVED // OFFLINE" }
+        guard let nearby else { return remoteAvailable ? "PSN REMOTE // READY" : "SAVED // OFFLINE" }
         switch nearby.state {
         case .ready: return nearby.runningAppName ?? "READY"
         case .standby: return "REST MODE"

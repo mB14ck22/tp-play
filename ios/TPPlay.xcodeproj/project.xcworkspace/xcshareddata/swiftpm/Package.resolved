@@ -1,0 +1,96 @@
+{
+  "originHash" : "e39ef67f7b02f84d0454e3419e91e9d22c160227865e0b19f0c51b1c229750c0",
+  "pins" : [
+    {
+      "identity" : "atprotoclient",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/germ-network/AtprotoClient.git",
+      "state" : {
+        "revision" : "814d20f67fbab0eab5fa78da1b726e15d5598421",
+        "version" : "0.8.0"
+      }
+    },
+    {
+      "identity" : "atprotooauth",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/germ-network/AtprotoOAuth.git",
+      "state" : {
+        "revision" : "8283ec2093385f3dfd2af7bf74797bc77d665033",
+        "version" : "0.6.0"
+      }
+    },
+    {
+      "identity" : "atprototypes",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/germ-network/AtprotoTypes.git",
+      "state" : {
+        "revision" : "9d0b6bba891c1a7dcfac21768f7c4c77c6aa06e7",
+        "version" : "0.5.1"
+      }
+    },
+    {
+      "identity" : "germconvenience",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/germ-network/GermConvenience.git",
+      "state" : {
+        "revision" : "bfe84a1678c6d7a21af3190c00bc78430befe36c",
+        "version" : "0.3.0"
+      }
+    },
+    {
+      "identity" : "oauth4swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/germ-network/oauth4swift.git",
+      "state" : {
+        "revision" : "3f549b08595f03b9cd0e38495653e775e153daea",
+        "version" : "0.6.0"
+      }
+    },
+    {
+      "identity" : "swift-asn1",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-asn1.git",
+      "state" : {
+        "revision" : "d9a5b37470adc940d22c3bcd5ca6953a516b727f",
+        "version" : "1.7.2"
+      }
+    },
+    {
+      "identity" : "swift-bases",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swift-libp2p/swift-bases.git",
+      "state" : {
+        "revision" : "f6f3ddc88aef6fd39494a35a7e95cd93c1a63e79",
+        "version" : "0.3.0"
+      }
+    },
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "47d3869a7291f085c1fb9fb1e6d3b97a793f45c6",
+        "version" : "4.5.1"
+      }
+    },
+    {
+      "identity" : "swift-http-types",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-http-types.git",
+      "state" : {
+        "revision" : "db774a277f60063a32d854f2980299caf06da041",
+        "version" : "1.6.0"
+      }
+    },
+    {
+      "identity" : "swift-log",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-log",
+      "state" : {
+        "revision" : "3ffafb9722d5d918c614feb496c8789a3b59d222",
+        "version" : "1.15.0"
+      }
+    }
+  ],
+  "version" : 3
+}

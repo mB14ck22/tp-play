@@ -72,7 +72,7 @@ struct ConsoleRegistrationView: View {
                         .buttonStyle(AcidButtonStyle(active: true))
                         .disabled(redirectURL.isEmpty || psnAccount.isLoading)
                         if psnAccount.isLoading {
-                            HStack { ProgressView().tint(TPPlayTheme.accent); Text("RETRIEVING ACCOUNT ID...") }
+                            HStack { TPTerminalActivityGlyph(); Text("RETRIEVING ACCOUNT ID...") }
                                 .registrationLabel()
                         }
                         if let error = psnAccount.errorMessage {
@@ -140,7 +140,7 @@ struct ConsoleRegistrationView: View {
             EmptyView()
         case .registering:
             HStack {
-                ProgressView().tint(TPPlayTheme.accent)
+                TPTerminalActivityGlyph()
                 Text("LINKING WITH CONSOLE...")
             }
         case .succeeded:

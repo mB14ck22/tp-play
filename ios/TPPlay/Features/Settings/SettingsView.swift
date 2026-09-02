@@ -1,15 +1,24 @@
 import SwiftUI
+import UIKit
 
 struct HomeView: View {
+    @StateObject private var psnLibrary = PSNLibraryStore.shared
     @AppStorage("streamResolution") private var resolution = 1080
     @AppStorage("streamFPS") private var fps = 60
     @AppStorage("streamBitrate") private var bitrate = 15_000
+    @State private var psnRedirectURL = ""
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                TPPageHeader("HOME // CONFIG")
+        VStack(spacing: 0) {
+            TPPageHeader("HOME // CONFIG")
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 10)
+                .background(TPPlayTheme.canvas)
 
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                psnAccountPanel
                 VStack(alignment: .leading, spacing: 18) {
                     configHeader("STREAM PROFILE", value: "\(resolution)P / \(fps)FPS")
                     choiceRow("RESOLUTION", choices: [("720P", 720), ("1080P", 1080)], selection: $resolution)
@@ -55,10 +64,65 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 20)
             }
-            .padding(20)
         }
         .background(TPPlayTheme.canvas)
+    }
+
+    private var psnAccountPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            configHeader("PLAYSTATION NETWORK", value: psnLibrary.signedInOnlineID?.uppercased() ?? "NOT CONNECTED")
+
+            if psnLibrary.isSignedIn {
+                Text("PSN LINKED // TROPHY ARCHIVE ENABLED")
+                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                    .foregroundStyle(TPPlayTheme.accent)
+                Button(psnLibrary.isLoading ? "SYNCING..." : "SYNC TROPHY ARCHIVE") {
+                    Task { await psnLibrary.sync() }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .buttonStyle(AcidButtonStyle(active: true))
+                .disabled(psnLibrary.isLoading)
+                Button("SIGN OUT PSN") { psnLibrary.signOut() }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .buttonStyle(AcidButtonStyle())
+            } else {
+                Button("OPEN PLAYSTATION SIGN-IN >") {
+                    UIApplication.shared.open(PSNLibraryStore.loginURL)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .buttonStyle(AcidButtonStyle())
+                TextField("PASTE FINAL REDIRECT URL", text: $psnRedirectURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(AcidFieldStyle())
+                Button(psnLibrary.isLoading ? "CONNECTING..." : "CONNECT PSN + LOAD LIBRARY") {
+                    Task { await psnLibrary.signIn(from: psnRedirectURL) }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .buttonStyle(AcidButtonStyle(active: true))
+                .disabled(psnRedirectURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || psnLibrary.isLoading)
+                Text("SIGN-IN RUNS ON SONY'S WEBSITE. TP PLAY STORES ONLY THE RETURNED SESSION IN IOS KEYCHAIN.")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundStyle(TPPlayTheme.secondaryText)
+            }
+
+            if let error = psnLibrary.errorMessage {
+                Text("ERROR // \(error.uppercased())")
+                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                    .foregroundStyle(TPPlayTheme.danger)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay { Rectangle().stroke(TPPlayTheme.danger, lineWidth: 1) }
+            }
+        }
+        .padding(16)
+        .background(TPPlayTheme.surface)
+        .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
     }
 
     private func configHeader(_ title: String, value: String) -> some View {

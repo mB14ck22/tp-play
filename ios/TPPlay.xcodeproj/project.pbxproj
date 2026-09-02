@@ -26,6 +26,12 @@
 		100000000000000000000011 /* FeedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000016 /* FeedStore.swift */; };
 		100000000000000000000012 /* NewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000017 /* NewsView.swift */; };
 		100000000000000000000013 /* CredentialTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000018 /* CredentialTransfer.swift */; };
+		100000000000000000000014 /* CommunityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000019 /* CommunityStore.swift */; };
+		100000000000000000000015 /* CommunityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001A /* CommunityView.swift */; };
+		100000000000000000000016 /* AtprotoOAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 900000000000000000000001 /* AtprotoOAuth */; };
+		100000000000000000000017 /* CommunityOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001C /* CommunityOAuthSession.swift */; };
+		100000000000000000000018 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001D /* LibraryView.swift */; };
+		100000000000000000000019 /* PSNLibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001E /* PSNLibraryStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +59,12 @@
 		200000000000000000000016 /* FeedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedStore.swift; sourceTree = "<group>"; };
 		200000000000000000000017 /* NewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsView.swift; sourceTree = "<group>"; };
 		200000000000000000000018 /* CredentialTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialTransfer.swift; sourceTree = "<group>"; };
+		200000000000000000000019 /* CommunityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityStore.swift; sourceTree = "<group>"; };
+		20000000000000000000001A /* CommunityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityView.swift; sourceTree = "<group>"; };
+		20000000000000000000001B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		20000000000000000000001C /* CommunityOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityOAuthSession.swift; sourceTree = "<group>"; };
+		20000000000000000000001D /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		20000000000000000000001E /* PSNLibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PSNLibraryStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,6 +73,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				100000000000000000000007 /* libTPPlayCore.a in Frameworks */,
+				100000000000000000000016 /* AtprotoOAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -122,6 +135,8 @@
 				30000000000000000000000C /* RemotePlay */,
 				30000000000000000000000E /* Settings */,
 				30000000000000000000000F /* News */,
+				300000000000000000000010 /* Community */,
+				300000000000000000000011 /* Library */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -188,6 +203,7 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000014 /* Assets.xcassets */,
+				20000000000000000000001B /* Info.plist */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -209,6 +225,25 @@
 			path = News;
 			sourceTree = "<group>";
 		};
+		300000000000000000000010 /* Community */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000019 /* CommunityStore.swift */,
+				20000000000000000000001A /* CommunityView.swift */,
+				20000000000000000000001C /* CommunityOAuthSession.swift */,
+			);
+			path = Community;
+			sourceTree = "<group>";
+		};
+		300000000000000000000011 /* Library */ = {
+			isa = PBXGroup;
+			children = (
+				20000000000000000000001D /* LibraryView.swift */,
+				20000000000000000000001E /* PSNLibraryStore.swift */,
+			);
+			path = Library;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -226,6 +261,9 @@
 			dependencies = (
 			);
 			name = TPPlay;
+			packageProductDependencies = (
+				900000000000000000000001 /* AtprotoOAuth */,
+			);
 			productName = TPPlay;
 			productReference = 200000000000000000000005 /* TPPlay.app */;
 			productType = "com.apple.product-type.application";
@@ -254,6 +292,9 @@
 				Base,
 			);
 			mainGroup = 300000000000000000000001;
+			packageReferences = (
+				800000000000000000000001 /* XCRemoteSwiftPackageReference "AtprotoOAuth" */,
+			);
 			productRefGroup = 300000000000000000000002 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -314,6 +355,11 @@
 				100000000000000000000011 /* FeedStore.swift in Sources */,
 				100000000000000000000012 /* NewsView.swift in Sources */,
 				100000000000000000000013 /* CredentialTransfer.swift in Sources */,
+				100000000000000000000014 /* CommunityStore.swift in Sources */,
+				100000000000000000000015 /* CommunityView.swift in Sources */,
+				100000000000000000000017 /* CommunityOAuthSession.swift in Sources */,
+				100000000000000000000018 /* LibraryView.swift in Sources */,
+				100000000000000000000019 /* PSNLibraryStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -444,8 +490,9 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/.build/iphoneos/include";
+				INFOPLIST_FILE = TPPlay/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "TP Play";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "TP Play uses your local network to find and connect to your PlayStation console.";
@@ -488,8 +535,9 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/.build/iphoneos/include";
+				INFOPLIST_FILE = TPPlay/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "TP Play";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "TP Play uses your local network to find and connect to your PlayStation console.";
@@ -545,6 +593,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		800000000000000000000001 /* XCRemoteSwiftPackageReference "AtprotoOAuth" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/germ-network/AtprotoOAuth.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		900000000000000000000001 /* AtprotoOAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 800000000000000000000001 /* XCRemoteSwiftPackageReference "AtprotoOAuth" */;
+			productName = AtprotoOAuth;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 400000000000000000000002 /* Project object */;
 }
