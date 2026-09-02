@@ -1,0 +1,19 @@
+{
+  "client_id": "https://mb14ck22.github.io/tp-play/oauth-client-metadata.json",
+  "client_name": "TP Play",
+  "client_uri": "https://mb14ck22.github.io/tp-play/",
+  "redirect_uris": [
+    "io.github.mb14ck22:/oauth/callback"
+  ],
+  "scope": "atproto include:app.bsky.authFull?aud=did:web:api.bsky.app%23bsky_appview blob:*/*",
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "application_type": "native",
+  "token_endpoint_auth_method": "none",
+  "dpop_bound_access_tokens": true
+}
