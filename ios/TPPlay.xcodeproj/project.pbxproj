@@ -30,8 +30,10 @@
 		100000000000000000000015 /* CommunityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001A /* CommunityView.swift */; };
 		100000000000000000000016 /* AtprotoOAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 900000000000000000000001 /* AtprotoOAuth */; };
 		100000000000000000000017 /* CommunityOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001C /* CommunityOAuthSession.swift */; };
+		10000000000000000000001A /* TouchControllerOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001F /* TouchControllerOverlay.swift */; };
 		100000000000000000000018 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001D /* LibraryView.swift */; };
 		100000000000000000000019 /* PSNLibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001E /* PSNLibraryStore.swift */; };
+		10000000000000000000001B /* TouchLayoutSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000020 /* TouchLayoutSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -65,6 +67,8 @@
 		20000000000000000000001C /* CommunityOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityOAuthSession.swift; sourceTree = "<group>"; };
 		20000000000000000000001D /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		20000000000000000000001E /* PSNLibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PSNLibraryStore.swift; sourceTree = "<group>"; };
+		20000000000000000000001F /* TouchControllerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControllerOverlay.swift; sourceTree = "<group>"; };
+		200000000000000000000020 /* TouchLayoutSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchLayoutSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -174,6 +178,7 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000013 /* RemotePlayView.swift */,
+				20000000000000000000001F /* TouchControllerOverlay.swift */,
 			);
 			path = RemotePlay;
 			sourceTree = "<group>";
@@ -212,6 +217,7 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000015 /* SettingsView.swift */,
+				200000000000000000000020 /* TouchLayoutSettingsView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -358,8 +364,10 @@
 				100000000000000000000014 /* CommunityStore.swift in Sources */,
 				100000000000000000000015 /* CommunityView.swift in Sources */,
 				100000000000000000000017 /* CommunityOAuthSession.swift in Sources */,
+				10000000000000000000001A /* TouchControllerOverlay.swift in Sources */,
 				100000000000000000000018 /* LibraryView.swift in Sources */,
 				100000000000000000000019 /* PSNLibraryStore.swift in Sources */,
+				10000000000000000000001B /* TouchLayoutSettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -407,6 +415,7 @@
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
+					"CHIAKI_LIB_ENABLE_MBEDTLS=1",
 					"DEBUG=1",
 					"$(inherited)",
 				);
@@ -465,6 +474,10 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"CHIAKI_LIB_ENABLE_MBEDTLS=1",
+					"$(inherited)",
+				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -491,7 +504,10 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/.build/iphoneos/include";
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/.build/iphoneos/include",
+					"$(SRCROOT)/.build/sources/mbedtls-2.28.0/include",
+				);
 				INFOPLIST_FILE = TPPlay/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "TP Play";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
@@ -536,7 +552,10 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/.build/iphoneos/include";
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/.build/iphoneos/include",
+					"$(SRCROOT)/.build/sources/mbedtls-2.28.0/include",
+				);
 				INFOPLIST_FILE = TPPlay/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "TP Play";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";

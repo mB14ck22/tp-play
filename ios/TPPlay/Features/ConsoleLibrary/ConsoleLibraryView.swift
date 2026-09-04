@@ -4,12 +4,15 @@ struct ConsoleLibraryView: View {
     @StateObject private var discovery = ConsoleDiscoveryStore()
     @StateObject private var registeredConsoles = RegisteredConsoleStore()
     @StateObject private var remoteCredentials = RemoteCredentialStore()
+    @StateObject private var manualConnections = ManualConnectionHistoryStore()
     @State private var consoleToRegister: DiscoveredConsole?
     @State private var pendingConsoleRegistration: DiscoveredConsole?
     @State private var playRequest: ConsolePlayRequest?
     @State private var consoleToRemove: RegisteredConsole?
     @State private var wakeError: String?
     @State private var connectingConsoleID: String?
+    @State private var connectionActivityText: String?
+    @State private var connectionPrompt: ConsoleConnectionPrompt?
     @State private var showingManualConsole = false
     @AppStorage("streamResolution") private var streamResolution = 1080
     @AppStorage("streamFPS") private var streamFPS = 60
@@ -41,9 +44,34 @@ struct ConsoleLibraryView: View {
                     .padding(.top, 14)
                     .padding(.bottom, 28)
                 }
-                .refreshable { discovery.restart() }
             }
-            .allowsHitTesting(wakeError == nil)
+            .allowsHitTesting(wakeError == nil && connectionPrompt == nil)
+
+            if let connectionPrompt {
+                Color.black.opacity(0.78)
+                    .ignoresSafeArea()
+                ConnectionRouteDialog(
+                    consoleName: connectionPrompt.console.nickname,
+                    automaticDetail: connectionPrompt.automaticDetail,
+                    initialManualAddress: manualConnections.address(for: connectionPrompt.console) ?? connectionPrompt.console.address,
+                    onAutomatic: {
+                        self.connectionPrompt = nil
+                        startAutomaticSession(
+                            for: connectionPrompt.console,
+                            remoteAvailable: connectionPrompt.remoteAvailable
+                        )
+                    },
+                    onManual: { address in
+                        self.connectionPrompt = nil
+                        startManualSession(for: connectionPrompt.console, address: address)
+                    },
+                    onCancel: { self.connectionPrompt = nil }
+                )
+                .frame(maxWidth: 430)
+                .padding(20)
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                .zIndex(2)
+            }
 
             if let wakeError {
                 Color.black.opacity(0.76)
@@ -54,7 +82,7 @@ struct ConsoleLibraryView: View {
                 .frame(maxWidth: 420)
                 .padding(20)
                 .transition(.opacity)
-                .zIndex(2)
+                .zIndex(3)
             }
         }
         .fullScreenCover(item: $consoleToRegister) { console in
@@ -81,12 +109,10 @@ struct ConsoleLibraryView: View {
                 showingManualConsole = false
             }
         }
-        .fullScreenCover(item: $playRequest) { request in
-            RemotePlayView(
-                console: request.console,
-                configuration: streamConfiguration,
-                remote: request.remote
-            )
+        .fullScreenCover(item: $playRequest, onDismiss: {
+            playRequest = nil
+        }) { request in
+            RemotePlayView(session: request.session)
         }
         .confirmationDialog("REMOVE CONSOLE?", isPresented: Binding(
             get: { consoleToRemove != nil },
@@ -146,40 +172,164 @@ struct ConsoleLibraryView: View {
                     nearby: nearby,
                     remoteAvailable: remoteAvailable,
                     isConnecting: connectingConsoleID == registered.id,
-                    onPlay: { startSession(for: registered, nearby: nearby, remoteAvailable: remoteAvailable) },
+                    connectionActivityText: connectingConsoleID == registered.id ? connectionActivityText : nil,
+                    onPlay: {
+                        connectionPrompt = ConsoleConnectionPrompt(
+                            console: registered,
+                            remoteAvailable: remoteAvailable
+                        )
+                    },
                     onRemove: { consoleToRemove = registered }
                 )
             }
         }
     }
 
-    private func startSession(for registered: RegisteredConsole, nearby: DiscoveredConsole?, remoteAvailable: Bool) {
-        let current = registered.updatedAddress(nearby?.address)
-        registeredConsoles.updateAddressIfNeeded(current)
+    private func startAutomaticSession(for registered: RegisteredConsole, remoteAvailable: Bool) {
+        connectingConsoleID = registered.id
+        connectionActivityText = "SCANNING LOCAL NETWORK"
 
-        if nearby == nil, remoteAvailable {
-            connectingConsoleID = registered.id
-            Task { @MainActor in
-                defer { connectingConsoleID = nil }
-                do {
-                    guard let remote = try await remoteCredentials.connection(for: current) else {
-                        wakeError = "No matching remote console credential was found."
-                        return
+        Task { @MainActor in
+            defer {
+                connectingConsoleID = nil
+                connectionActivityText = nil
+            }
+
+            // Do not route from the Play page's cached discovery snapshot. AUTO
+            // starts a fresh broadcast scan and directly probes the paired LAN
+            // address; only a negative result from both permits PSN fallback.
+            async let discoveredConsole = discovery.discoverConsole(matching: registered)
+            async let savedAddressState = probeState(of: registered, timeout: 1_000)
+            let (nearby, directState) = await (discoveredConsole, savedAddressState)
+            guard !Task.isCancelled else { return }
+
+            let localConsole: RegisteredConsole?
+            let localState: DiscoveredConsole.State
+            if let nearby {
+                localConsole = registered.updatedAddress(nearby.address)
+                localState = nearby.state
+            } else if directState != .unknown {
+                localConsole = registered
+                localState = directState
+            } else {
+                localConsole = nil
+                localState = .unknown
+            }
+
+            var localFailure: String?
+            if let localConsole {
+                registeredConsoles.updateAddressIfNeeded(localConsole)
+                if localState == .standby {
+                    connectionActivityText = "WAKING LOCAL CONSOLE"
+                    if let error = discovery.wake(localConsole) {
+                        localFailure = error
+                    } else {
+                        connectionActivityText = "WAITING FOR LOCAL CONSOLE"
+                        for _ in 0..<15 {
+                            try? await Task.sleep(for: .milliseconds(800))
+                            guard !Task.isCancelled else { return }
+                            if await probeState(of: localConsole, timeout: 650) == .ready {
+                                presentSession(console: localConsole)
+                                return
+                            }
+                        }
+                        localFailure = "The local console did not become ready after the wake request."
                     }
-                    playRequest = ConsolePlayRequest(console: current, remote: remote)
-                } catch {
-                    wakeError = error.localizedDescription
+                } else {
+                    presentSession(console: localConsole)
+                    return
                 }
             }
-        } else if nearby?.state == .standby || nearby == nil {
-            guard !current.address.isEmpty else {
-                wakeError = "No saved remote connection is available for this console."
+
+            guard remoteAvailable else {
+                wakeError = localFailure ?? "The console was not found on the local network and no internet connection credential is available."
                 return
             }
-            wakeError = discovery.wake(current)
-        } else {
-            playRequest = ConsolePlayRequest(console: current, remote: nil)
+
+            connectionActivityText = "CONNECTING THROUGH PSN"
+            do {
+                guard let remote = try await remoteCredentials.connection(for: registered) else {
+                    wakeError = localFailure ?? "No matching remote console credential was found."
+                    return
+                }
+                presentSession(console: registered, remote: remote)
+            } catch {
+                wakeError = error.localizedDescription
+            }
         }
+    }
+
+    private func startManualSession(for registered: RegisteredConsole, address: String) {
+        let cleanAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanAddress.isEmpty else { return }
+        let directConsole = registered.updatedAddress(cleanAddress)
+        connectingConsoleID = registered.id
+        connectionActivityText = "CHECKING CONSOLE"
+        Task { @MainActor in
+            defer {
+                connectingConsoleID = nil
+                connectionActivityText = nil
+            }
+
+            let initialState = await probeState(of: directConsole, timeout: 900)
+            if initialState == .standby {
+                connectionActivityText = "WAKING CONSOLE"
+                if let error = discovery.wake(directConsole) {
+                    wakeError = error
+                    return
+                }
+
+                for _ in 0..<15 {
+                    try? await Task.sleep(for: .milliseconds(800))
+                    guard !Task.isCancelled else { return }
+                    let state = await probeState(of: directConsole, timeout: 650)
+                    if state == .ready {
+                        presentSession(console: directConsole, manualAddress: cleanAddress)
+                        return
+                    }
+                }
+                wakeError = "The console did not become ready after the wake request."
+                return
+            }
+
+            // READY connects immediately. UNKNOWN also gets one direct attempt because
+            // routed/VPN networks may carry Remote Play while dropping discovery replies.
+            presentSession(console: directConsole, manualAddress: cleanAddress)
+        }
+    }
+
+    private func probeState(of console: RegisteredConsole, timeout: UInt32) async -> DiscoveredConsole.State {
+        let state = await Task.detached(priority: .userInitiated) {
+            console.address.withCString {
+                tp_play_console_probe_state($0, console.target >= 1_000_000, timeout)
+            }
+        }.value
+        switch state.rawValue {
+        case 1: return .ready
+        case 2: return .standby
+        default: return .unknown
+        }
+    }
+
+    private func presentSession(
+        console: RegisteredConsole,
+        remote: RemoteConsoleConnection? = nil,
+        manualAddress: String? = nil
+    ) {
+        let session = RemotePlaySession(
+            console: console,
+            configuration: streamConfiguration,
+            remote: remote,
+            // Manual addresses are commonly routed over a WAN/VPN path. Give
+            // those sessions a short A/V startup cushion, while preserving the
+            // configured bitrate and LAN/AUTO's immediate low-latency playback.
+            startupBufferMilliseconds: manualAddress == nil ? 0 : 250,
+            onConnected: {
+                guard let manualAddress else { return }
+                manualConnections.recordSuccessfulAddress(manualAddress, for: console)
+            }
+        )
+        playRequest = ConsolePlayRequest(session: session)
     }
 
     private var emptyConsoleState: some View {
@@ -216,6 +366,7 @@ private struct RegisteredConsoleCard: View {
     let nearby: DiscoveredConsole?
     let remoteAvailable: Bool
     let isConnecting: Bool
+    let connectionActivityText: String?
     let onPlay: () -> Void
     let onRemove: () -> Void
 
@@ -253,7 +404,7 @@ private struct RegisteredConsoleCard: View {
                     if isConnecting {
                         TPTerminalActivityGlyph(color: TPPlayTheme.onAccent)
                     }
-                    Text(isConnecting ? "REFRESHING PSN" : (canStartSession ? "START SESSION" : "WAKE CONSOLE"))
+                    Text(isConnecting ? (connectionActivityText ?? "PREPARING CONSOLE") : (canStartSession ? "START SESSION" : "WAKE CONSOLE"))
                     Spacer()
                     Text(">")
                 }
@@ -282,8 +433,176 @@ private struct RegisteredConsoleCard: View {
 
 private struct ConsolePlayRequest: Identifiable {
     let id = UUID()
+    let session: RemotePlaySession
+}
+
+private struct ConsoleConnectionPrompt: Identifiable {
+    let id = UUID()
     let console: RegisteredConsole
-    let remote: RemoteConsoleConnection?
+    let remoteAvailable: Bool
+
+    var automaticDetail: String {
+        remoteAvailable ? "LOCAL FIRST / INTERNET FALLBACK" : "LOCAL NETWORK"
+    }
+}
+
+@MainActor
+private final class ManualConnectionHistoryStore: ObservableObject {
+    private static let storageKey = "manualConnectionAddresses"
+    @Published private var addresses: [String: String]
+
+    init() {
+        addresses = UserDefaults.standard.dictionary(forKey: Self.storageKey) as? [String: String] ?? [:]
+    }
+
+    func address(for console: RegisteredConsole) -> String? {
+        addresses[console.id]
+    }
+
+    func recordSuccessfulAddress(_ address: String, for console: RegisteredConsole) {
+        guard addresses[console.id] != address else { return }
+        addresses[console.id] = address
+        UserDefaults.standard.set(addresses, forKey: Self.storageKey)
+    }
+}
+
+private struct ConnectionRouteDialog: View {
+    private enum Route {
+        case automatic
+        case manual
+    }
+
+    let consoleName: String
+    let automaticDetail: String
+    let onAutomatic: () -> Void
+    let onManual: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var route: Route = .automatic
+    @State private var manualAddress: String
+
+    init(
+        consoleName: String,
+        automaticDetail: String,
+        initialManualAddress: String,
+        onAutomatic: @escaping () -> Void,
+        onManual: @escaping (String) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.consoleName = consoleName
+        self.automaticDetail = automaticDetail
+        self.onAutomatic = onAutomatic
+        self.onManual = onManual
+        self.onCancel = onCancel
+        _manualAddress = State(initialValue: initialManualAddress)
+    }
+
+    private var cleanAddress: String {
+        manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Rectangle()
+                    .fill(TPPlayTheme.accent)
+                    .frame(width: 8, height: 8)
+                Text("// CONNECTION ROUTE")
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .tracking(1)
+                Spacer()
+                Text("NET")
+                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                    .tracking(1)
+            }
+            .foregroundStyle(TPPlayTheme.primaryText)
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .background(TPPlayTheme.surfaceRaised)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(TPPlayTheme.violet).frame(height: 1)
+            }
+
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(consoleName.uppercased())
+                        .font(.system(size: 15, weight: .black, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.primaryText)
+                        .lineLimit(1)
+                    Text("SELECT HOW TP PLAY REACHES THIS CONSOLE")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .tracking(0.5)
+                        .foregroundStyle(TPPlayTheme.secondaryText)
+                }
+
+                HStack(spacing: 8) {
+                    routeButton("AUTO", detail: automaticDetail, value: .automatic)
+                    routeButton("MANUAL", detail: "DIRECT IP / TAILSCALE", value: .manual)
+                }
+
+                if route == .manual {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("DIRECT ENDPOINT").acidLabel()
+                        TextField("IP ADDRESS OR HOSTNAME", text: $manualAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.numbersAndPunctuation)
+                            .textFieldStyle(AcidFieldStyle())
+                        Text("THE ADDRESS IS SAVED ONLY AFTER A SUCCESSFUL CONNECTION.")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .tracking(0.35)
+                            .foregroundStyle(TPPlayTheme.tertiaryText)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                HStack(spacing: 8) {
+                    Button("CANCEL", action: onCancel)
+                        .frame(width: 96)
+                        .frame(minHeight: 46)
+                        .buttonStyle(AcidButtonStyle())
+                    Button(route == .automatic ? "START AUTO >" : "CONNECT DIRECT >") {
+                        if route == .automatic { onAutomatic() }
+                        else { onManual(cleanAddress) }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .buttonStyle(AcidButtonStyle(active: true))
+                    .disabled(route == .manual && cleanAddress.isEmpty)
+                }
+            }
+            .padding(16)
+            .background(TPPlayTheme.surface)
+        }
+        .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 2) }
+        .preferredColorScheme(.dark)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func routeButton(_ title: String, detail: String, value: Route) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.18)) { route = value }
+        } label: {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Rectangle()
+                        .fill(route == value ? TPPlayTheme.onAccent : TPPlayTheme.violet)
+                        .frame(width: 6, height: 6)
+                    Text(title)
+                    Spacer(minLength: 0)
+                    Text(value == .automatic ? "A" : "M")
+                        .foregroundStyle(route == value ? TPPlayTheme.onAccent.opacity(0.62) : TPPlayTheme.tertiaryText)
+                }
+                Text(detail)
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .tracking(0.3)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        }
+        .buttonStyle(AcidButtonStyle(active: route == value))
+    }
 }
 
 private struct ConsoleGlyph: View {

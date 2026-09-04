@@ -41,6 +41,15 @@ typedef enum TPPlayRegistrationEvent {
 	TP_PLAY_REGISTRATION_SUCCEEDED = 2,
 } TPPlayRegistrationEvent;
 
+typedef enum TPPlayConnectionStage {
+	TP_PLAY_CONNECTION_STAGE_CONTACTING = 1,
+	TP_PLAY_CONNECTION_STAGE_AUTHENTICATING = 2,
+	TP_PLAY_CONNECTION_STAGE_ESTABLISHING_STREAM = 3,
+	TP_PLAY_CONNECTION_STAGE_WAITING_FOR_VIDEO = 4,
+} TPPlayConnectionStage;
+
+#define TP_PLAY_SESSION_EVENT_CONNECTION_STAGE 1000
+
 typedef struct TPPlayRegisteredHost {
 	int target;
 	const char *nickname;
@@ -58,6 +67,7 @@ typedef void (*TPPlayRegistrationCallback)(TPPlayRegistrationEvent event, const 
 typedef void (*TPPlaySessionEventCallback)(int event_type, int value, const char *message, void *context);
 typedef bool (*TPPlayVideoCallback)(const uint8_t *bytes, size_t count, void *context);
 typedef void (*TPPlayAudioSettingsCallback)(uint32_t channels, uint32_t sample_rate, void *context);
+/* sample_count is the total number of interleaved int16 samples across all channels. */
 typedef void (*TPPlayAudioFrameCallback)(const int16_t *samples, size_t sample_count, void *context);
 
 typedef struct TPPlayControllerState {
@@ -78,6 +88,7 @@ typedef void (*TPPlayDiscoveryCallback)(const TPPlayHost *hosts, size_t count, v
 const char *tp_play_core_version(void);
 TPPlayDiscovery *tp_play_discovery_create(TPPlayDiscoveryCallback callback, void *context, int *error_code);
 void tp_play_discovery_destroy(TPPlayDiscovery *discovery);
+TPPlayHostState tp_play_console_probe_state(const char *host, bool ps5, uint32_t timeout_ms);
 int tp_play_console_wake(const char *host, uint64_t credential, bool ps5);
 TPPlayRegistration *tp_play_registration_create(
 	int target,
@@ -135,6 +146,7 @@ TPPlaySession *tp_play_session_create_remote(
 	int *error_code);
 int tp_play_session_start(TPPlaySession *session);
 void tp_play_session_stop(TPPlaySession *session);
+int tp_play_session_request_idr(TPPlaySession *session);
 void tp_play_session_destroy(TPPlaySession *session);
 int tp_play_session_set_controller(TPPlaySession *session, const TPPlayControllerState *state);
 int tp_play_session_set_login_pin(TPPlaySession *session, const char *pin);

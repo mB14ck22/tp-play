@@ -1,9 +1,13 @@
 #include "TPPlayCore.h"
 
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <pthread.h>
+#include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 
 #include <chiaki/common.h>
 #include <chiaki/discoveryservice.h>
@@ -37,6 +41,10 @@ struct TPPlaySession {
 	TPPlayAudioFrameCallback audio_frame_callback;
 	void *context;
 	bool started;
+	atomic_bool logged_first_video_sample;
+	atomic_bool logged_audio_settings;
+	atomic_bool logged_first_audio_frame;
+	atomic_uint_fast64_t video_sample_count;
 	ChiakiLog *holepunch_log;
 };
 
@@ -123,24 +131,56 @@ static void tp_play_session_event_callback(ChiakiEvent *event, void *context)
 	session->event_callback((int)event->type, value, message, session->context);
 }
 
+static void tp_play_session_log_callback(ChiakiLogLevel level, const char *message, void *context)
+{
+	TPPlaySession *session = context;
+	chiaki_log_cb_print(level, message, NULL);
+	if(!session || !session->event_callback || !message)
+		return;
+
+	int stage = 0;
+	if(strstr(message, "Starting session request") || strstr(message, "Trying to request session") || strstr(message, "Connected to"))
+		stage = TP_PLAY_CONNECTION_STAGE_CONTACTING;
+	else if(strstr(message, "Sending session request"))
+		stage = TP_PLAY_CONNECTION_STAGE_AUTHENTICATING;
+	else if(strstr(message, "Session request successful") || strstr(message, "Starting ctrl") || strstr(message, "Starting Senkusha"))
+		stage = TP_PLAY_CONNECTION_STAGE_ESTABLISHING_STREAM;
+	else if(strstr(message, "StreamConnection sending big") || strstr(message, "successfully received bang") || strstr(message, "successfully received streaminfo"))
+		stage = TP_PLAY_CONNECTION_STAGE_WAITING_FOR_VIDEO;
+
+	if(stage != 0)
+		session->event_callback(TP_PLAY_SESSION_EVENT_CONNECTION_STAGE, stage, NULL, session->context);
+}
+
 static bool tp_play_session_video_callback(uint8_t *bytes, size_t count, int32_t frames_lost, bool frame_recovered, void *context)
 {
 	(void)frames_lost;
 	(void)frame_recovered;
 	TPPlaySession *session = context;
+	uint64_t sample_number = atomic_fetch_add(&session->video_sample_count, 1) + 1;
+	if(!atomic_exchange(&session->logged_first_video_sample, true) || sample_number % 60 == 0)
+		fprintf(stderr, "[TPPLAY-DIAG] encoded video sample #%llu: %zu bytes, lost=%d recovered=%d\n",
+			(unsigned long long)sample_number, count, frames_lost, frame_recovered ? 1 : 0);
 	return session->video_callback(bytes, count, session->context);
 }
 
 static void tp_play_session_audio_settings_callback(uint32_t channels, uint32_t rate, void *context)
 {
 	TPPlaySession *session = context;
+	if(!atomic_exchange(&session->logged_audio_settings, true))
+		fprintf(stderr, "[TPPLAY-DIAG] audio configured: %u channels @ %u Hz\n", channels, rate);
 	session->audio_settings_callback(channels, rate, session->context);
 }
 
 static void tp_play_session_audio_frame_callback(int16_t *samples, size_t sample_count, void *context)
 {
 	TPPlaySession *session = context;
-	session->audio_frame_callback(samples, sample_count, session->context);
+	/* opus_decode() returns frames per channel, while TPPlayAudioFrameCallback
+	 * consumes the total number of interleaved int16 samples. */
+	size_t interleaved_sample_count = sample_count * session->audio_decoder.audio_header.channels;
+	if(!atomic_exchange(&session->logged_first_audio_frame, true))
+		fprintf(stderr, "[TPPLAY-DIAG] first decoded audio frame: %zu interleaved samples\n", interleaved_sample_count);
+	session->audio_frame_callback(samples, interleaved_sample_count, session->context);
 }
 
 const char *tp_play_core_version(void)
@@ -214,6 +254,84 @@ void tp_play_discovery_destroy(TPPlayDiscovery *discovery)
 		return;
 	chiaki_discovery_service_fini(&discovery->service);
 	free(discovery);
+}
+
+TPPlayHostState tp_play_console_probe_state(const char *host, bool ps5, uint32_t timeout_ms)
+{
+	if(!host)
+		return TP_PLAY_HOST_STATE_UNKNOWN;
+	pthread_once(&tp_play_core_once, tp_play_initialize_core);
+	if(tp_play_core_init_error != CHIAKI_ERR_SUCCESS)
+		return TP_PLAY_HOST_STATE_UNKNOWN;
+
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = strchr(host, ':') ? AF_INET6 : AF_INET;
+	hints.ai_socktype = SOCK_DGRAM;
+	struct addrinfo *addresses = NULL;
+	if(getaddrinfo(host, NULL, &hints, &addresses) != 0)
+		return TP_PLAY_HOST_STATE_UNKNOWN;
+
+	struct sockaddr_storage destination;
+	memset(&destination, 0, sizeof(destination));
+	socklen_t destination_size = 0;
+	for(struct addrinfo *address = addresses; address; address = address->ai_next)
+	{
+		if(address->ai_addrlen > sizeof(destination))
+			continue;
+		memcpy(&destination, address->ai_addr, address->ai_addrlen);
+		destination_size = (socklen_t)address->ai_addrlen;
+		break;
+	}
+	freeaddrinfo(addresses);
+	if(destination_size == 0)
+		return TP_PLAY_HOST_STATE_UNKNOWN;
+
+	if(destination.ss_family == AF_INET)
+		((struct sockaddr_in *)&destination)->sin_port = htons(ps5 ? CHIAKI_DISCOVERY_PORT_PS5 : CHIAKI_DISCOVERY_PORT_PS4);
+	else
+		((struct sockaddr_in6 *)&destination)->sin6_port = htons(ps5 ? CHIAKI_DISCOVERY_PORT_PS5 : CHIAKI_DISCOVERY_PORT_PS4);
+
+	ChiakiLog log;
+	chiaki_log_init(&log, CHIAKI_LOG_WARNING | CHIAKI_LOG_ERROR, chiaki_log_cb_print, NULL);
+	ChiakiDiscovery probe;
+	if(chiaki_discovery_init(&probe, &log, destination.ss_family) != CHIAKI_ERR_SUCCESS)
+		return TP_PLAY_HOST_STATE_UNKNOWN;
+
+	ChiakiDiscoveryPacket packet;
+	memset(&packet, 0, sizeof(packet));
+	packet.cmd = CHIAKI_DISCOVERY_CMD_SRCH;
+	packet.protocol_version = ps5 ? CHIAKI_DISCOVERY_PROTOCOL_VERSION_PS5 : CHIAKI_DISCOVERY_PROTOCOL_VERSION_PS4;
+	if(chiaki_discovery_send(&probe, &packet, (struct sockaddr *)&destination, destination_size) != CHIAKI_ERR_SUCCESS)
+	{
+		chiaki_discovery_fini(&probe);
+		return TP_PLAY_HOST_STATE_UNKNOWN;
+	}
+
+	fd_set read_set;
+	FD_ZERO(&read_set);
+	FD_SET(probe.socket, &read_set);
+	struct timeval timeout = {
+		.tv_sec = timeout_ms / 1000,
+		.tv_usec = (timeout_ms % 1000) * 1000,
+	};
+	int selected = select(probe.socket + 1, &read_set, NULL, NULL, &timeout);
+	TPPlayHostState state = TP_PLAY_HOST_STATE_UNKNOWN;
+	if(selected > 0 && FD_ISSET(probe.socket, &read_set))
+	{
+		char response[512];
+		ssize_t count = recvfrom(probe.socket, response, sizeof(response) - 1, 0, NULL, NULL);
+		if(count > 0)
+		{
+			response[count] = '\0';
+			if(strncmp(response, "HTTP/1.1 200", 12) == 0)
+				state = TP_PLAY_HOST_STATE_READY;
+			else if(strncmp(response, "HTTP/1.1 620", 12) == 0)
+				state = TP_PLAY_HOST_STATE_STANDBY;
+		}
+	}
+	chiaki_discovery_fini(&probe);
+	return state;
 }
 
 int tp_play_console_wake(const char *host, uint64_t credential, bool ps5)
@@ -350,7 +468,7 @@ static TPPlaySession *tp_play_session_create_common(
 	result->audio_settings_callback = audio_settings_callback;
 	result->audio_frame_callback = audio_frame_callback;
 	result->context = context;
-	chiaki_log_init(&result->log, CHIAKI_LOG_ALL & ~CHIAKI_LOG_VERBOSE, chiaki_log_cb_print, NULL);
+	chiaki_log_init(&result->log, CHIAKI_LOG_ALL & ~CHIAKI_LOG_VERBOSE, tp_play_session_log_callback, result);
 	chiaki_opus_decoder_init(&result->audio_decoder, &result->log);
 	chiaki_opus_decoder_set_cb(&result->audio_decoder, tp_play_session_audio_settings_callback, tp_play_session_audio_frame_callback, result);
 
@@ -372,7 +490,9 @@ static TPPlaySession *tp_play_session_create_common(
 	info.video_profile.codec = (ChiakiCodec)codec;
 	info.video_profile_auto_downgrade = true;
 	info.enable_dualsense = true;
-	info.packet_loss_max = 0.1;
+	/* Keep parity overhead bounded on routed/mobile paths. Reporting very high
+	 * transient loss can add enough FEC traffic to prolong the congestion. */
+	info.packet_loss_max = 0.05;
 	info.enable_idr_on_fec_failure = true;
 
 	ChiakiErrorCode error = chiaki_session_init(&result->session, &info, &result->log);
@@ -550,6 +670,13 @@ void tp_play_session_stop(TPPlaySession *session)
 {
 	if(session && session->started)
 		chiaki_session_stop(&session->session);
+}
+
+int tp_play_session_request_idr(TPPlaySession *session)
+{
+	if(!session || !session->started)
+		return CHIAKI_ERR_INVALID_DATA;
+	return chiaki_session_request_idr(&session->session);
 }
 
 void tp_play_session_destroy(TPPlaySession *session)

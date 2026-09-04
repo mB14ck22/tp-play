@@ -32,7 +32,7 @@ final class ConsoleDiscoveryStore: ObservableObject {
     init() {
     }
 
-    func restart() {
+    private func restart() {
         tp_play_discovery_destroy(discovery)
         discovery = nil
         errorMessage = nil
@@ -47,11 +47,26 @@ final class ConsoleDiscoveryStore: ObservableObject {
             discovery = nil
             consoles = []
             errorMessage = nil
-        } else if discovery == nil {
-            start()
         } else {
             consoles = consoles.filter(matchesRegisteredConsole)
         }
+    }
+
+    /// Runs a bounded, on-demand LAN discovery pass. The discovery service is
+    /// stopped before this method returns so opening the Play page does not keep
+    /// a background broadcast scan alive.
+    func discoverConsole(matching registered: RegisteredConsole, timeoutMilliseconds: UInt64 = 3_000) async -> DiscoveredConsole? {
+        restart()
+        defer { stopDiscovery() }
+
+        let interval: UInt64 = 100
+        let attempts = max(1, Int(timeoutMilliseconds / interval))
+        for _ in 0..<attempts {
+            if let console = console(matching: registered) { return console }
+            guard !Task.isCancelled else { return nil }
+            try? await Task.sleep(for: .milliseconds(interval))
+        }
+        return console(matching: registered)
     }
 
     func console(matching registered: RegisteredConsole) -> DiscoveredConsole? {
@@ -82,6 +97,11 @@ final class ConsoleDiscoveryStore: ObservableObject {
         if discovery == nil {
             errorMessage = "Discovery could not start (core error \(errorCode))."
         }
+    }
+
+    private func stopDiscovery() {
+        tp_play_discovery_destroy(discovery)
+        discovery = nil
     }
 
     deinit {

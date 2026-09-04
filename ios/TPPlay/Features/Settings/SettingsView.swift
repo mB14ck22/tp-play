@@ -1,12 +1,15 @@
+import AuthenticationServices
 import SwiftUI
 import UIKit
 
 struct HomeView: View {
     @StateObject private var psnLibrary = PSNLibraryStore.shared
+    @StateObject private var psnAuthenticator = PSNWebAuthenticator()
+    @ObservedObject private var touchLayouts = TouchLayoutStore.shared
     @AppStorage("streamResolution") private var resolution = 1080
     @AppStorage("streamFPS") private var fps = 60
     @AppStorage("streamBitrate") private var bitrate = 15_000
-    @State private var psnRedirectURL = ""
+    @State private var showingTouchLayouts = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,14 +22,15 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                 psnAccountPanel
+                touchControlsPanel
                 VStack(alignment: .leading, spacing: 18) {
                     configHeader("STREAM PROFILE", value: "\(resolution)P / \(fps)FPS")
                     choiceRow("RESOLUTION", choices: [("720P", 720), ("1080P", 1080)], selection: $resolution)
                     choiceRow("FRAME RATE", choices: [("30 FPS", 30), ("60 FPS", 60)], selection: $fps)
                     VStack(alignment: .leading, spacing: 8) {
-                        configHeader("BITRATE", value: "\(bitrate / 1_000) MBPS")
+                        configHeader("BITRATE", value: "\(bitrate / 1_000) MBPS // NEXT SESSION")
                         HStack(spacing: 8) {
-                            Button("−") { bitrate = max(4_000, bitrate - 1_000) }
+                            Button("−") { bitrate = max(2_000, bitrate - 1_000) }
                                 .frame(width: 48, height: 44)
                                 .buttonStyle(AcidButtonStyle())
                             Text("\(bitrate / 1_000)")
@@ -35,10 +39,14 @@ struct HomeView: View {
                                 .frame(maxWidth: .infinity, minHeight: 44)
                                 .background(TPPlayTheme.canvas)
                                 .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
-                            Button("+") { bitrate = min(30_000, bitrate + 1_000) }
+                            Button("+") { bitrate = min(100_000, bitrate + 1_000) }
                                 .frame(width: 48, height: 44)
                                 .buttonStyle(AcidButtonStyle())
                         }
+                        Text("2–100 MBPS // HIGHER VALUES PRESERVE FAST MOTION BUT REQUIRE A STABLE DIRECT PATH")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .tracking(0.35)
+                            .foregroundStyle(TPPlayTheme.tertiaryText)
                     }
                     Button("RESET RECOMMENDED") {
                         resolution = 1080
@@ -71,6 +79,37 @@ struct HomeView: View {
             }
         }
         .background(TPPlayTheme.canvas)
+        .fullScreenCover(isPresented: $showingTouchLayouts) {
+            TouchLayoutSettingsView()
+        }
+    }
+
+    private var touchControlsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            configHeader("TOUCH CONTROLS", value: "\(touchLayouts.presets.count) PRESET\(touchLayouts.presets.count == 1 ? "" : "S")")
+            HStack(spacing: 12) {
+                Rectangle()
+                    .fill(TPPlayTheme.violet)
+                    .frame(width: 8, height: 34)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("CONTROL PRESET LIBRARY")
+                        .font(.system(size: 14, weight: .black, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.primaryText)
+                        .lineLimit(1)
+                    Text("SELECT A PRESET WHILE STREAMING")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .tracking(0.6)
+                        .foregroundStyle(TPPlayTheme.secondaryText)
+                }
+                Spacer()
+            }
+            Button("MANAGE + EDIT PRESETS >") { showingTouchLayouts = true }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .buttonStyle(AcidButtonStyle(active: true))
+        }
+        .padding(16)
+        .background(TPPlayTheme.surface)
+        .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
     }
 
     private var psnAccountPanel: some View {
@@ -91,27 +130,18 @@ struct HomeView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .buttonStyle(AcidButtonStyle())
             } else {
-                Button("OPEN PLAYSTATION SIGN-IN >") {
-                    UIApplication.shared.open(PSNLibraryStore.loginURL)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .buttonStyle(AcidButtonStyle())
-                TextField("PASTE FINAL REDIRECT URL", text: $psnRedirectURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .textFieldStyle(AcidFieldStyle())
-                Button(psnLibrary.isLoading ? "CONNECTING..." : "CONNECT PSN + LOAD LIBRARY") {
-                    Task { await psnLibrary.signIn(from: psnRedirectURL) }
+                Button(psnLibrary.isLoading || psnAuthenticator.isAuthenticating ? "CONNECTING..." : "CONNECT PSN + LOAD LIBRARY") {
+                    Task { await psnAuthenticator.connect(library: psnLibrary) }
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .buttonStyle(AcidButtonStyle(active: true))
-                .disabled(psnRedirectURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || psnLibrary.isLoading)
-                Text("SIGN-IN RUNS ON SONY'S WEBSITE. TP PLAY STORES ONLY THE RETURNED SESSION IN IOS KEYCHAIN.")
+                .disabled(psnLibrary.isLoading || psnAuthenticator.isAuthenticating)
+                Text("SIGN-IN RUNS IN SONY'S SECURE WEB SESSION AND RETURNS TO TP PLAY AUTOMATICALLY. ONLY THE RETURNED SESSION IS STORED IN IOS KEYCHAIN.")
                     .font(.system(size: 8, weight: .medium, design: .monospaced))
                     .foregroundStyle(TPPlayTheme.secondaryText)
             }
 
-            if let error = psnLibrary.errorMessage {
+            if let error = psnLibrary.errorMessage ?? psnAuthenticator.errorMessage {
                 Text("ERROR // \(error.uppercased())")
                     .font(.system(size: 9, weight: .black, design: .monospaced))
                     .foregroundStyle(TPPlayTheme.danger)
@@ -147,6 +177,93 @@ struct HomeView: View {
                         .buttonStyle(AcidButtonStyle(active: selection.wrappedValue == choice.1))
                 }
             }
+        }
+    }
+}
+
+@MainActor
+private final class PSNWebAuthenticator: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+    @Published private(set) var isAuthenticating = false
+    @Published private(set) var errorMessage: String?
+
+    private var session: ASWebAuthenticationSession?
+    private weak var presentationWindow: UIWindow?
+
+    func connect(library: PSNLibraryStore) async {
+        guard !isAuthenticating else { return }
+        isAuthenticating = true
+        errorMessage = nil
+        defer { isAuthenticating = false }
+
+        do {
+            let callback = try await authenticate()
+            await library.signIn(from: callback.absoluteString)
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func authenticate() async throws -> URL {
+        guard session == nil else { throw PSNWebAuthenticationError.alreadyRunning }
+        guard let window = Self.activeWindow else { throw PSNWebAuthenticationError.noPresentationWindow }
+        presentationWindow = window
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let session = ASWebAuthenticationSession(
+                url: PSNLibraryStore.loginURL,
+                callbackURLScheme: PSNLibraryStore.loginCallbackScheme
+            ) { [weak self] callbackURL, error in
+                Task { @MainActor in
+                    self?.session = nil
+                    self?.presentationWindow = nil
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if let callbackURL {
+                        continuation.resume(returning: callbackURL)
+                    } else {
+                        continuation.resume(throwing: PSNWebAuthenticationError.missingCallback)
+                    }
+                }
+            }
+            session.presentationContextProvider = self
+            session.prefersEphemeralWebBrowserSession = false
+            self.session = session
+
+            if !session.start() {
+                self.session = nil
+                self.presentationWindow = nil
+                continuation.resume(throwing: PSNWebAuthenticationError.couldNotStart)
+            }
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        presentationWindow ?? Self.activeWindow ?? UIWindow()
+    }
+
+    private static var activeWindow: UIWindow? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+    }
+}
+
+private enum PSNWebAuthenticationError: LocalizedError {
+    case alreadyRunning
+    case noPresentationWindow
+    case missingCallback
+    case couldNotStart
+
+    var errorDescription: String? {
+        switch self {
+        case .alreadyRunning: "A PSN sign-in is already running."
+        case .noPresentationWindow: "TP Play could not present the PSN sign-in window."
+        case .missingCallback: "Sony completed sign-in without returning an authorization code."
+        case .couldNotStart: "TP Play could not start the PSN sign-in session."
         }
     }
 }

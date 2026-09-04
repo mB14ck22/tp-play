@@ -42,6 +42,13 @@
 // Amount of bytes to add to AV data size for MTU pings to get the full size of the ip packet for MTU
 #define MTU_PING_DATA_ADD (MTU_UDP_PACKET_ADD + MTU_AV_PACKET_ADD)
 
+// Probe the complete IPv4 path-MTU range instead of imposing the historical
+// 1454-byte ceiling. Senkusha still selects the largest size that succeeds on
+// the current route, so a tunnel with a 1280-byte PMTU remains at 1280 while a
+// native Ethernet/Wi-Fi route can negotiate all the way up to 1500.
+#define SENKUSHA_MTU_MIN 576
+#define SENKUSHA_MTU_MAX 1500
+
 typedef enum {
 	STATE_IDLE,
 	STATE_TAKION_CONNECT,
@@ -262,14 +269,14 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_senkusha_run(ChiakiSenkusha *senkusha, uint
 	if(mtu_timeout_ms > 500)
 		mtu_timeout_ms = 500;
 
-	err = senkusha_run_mtu_in_test(senkusha, 576, 1454, 3, mtu_timeout_ms, mtu_in);
+	err = senkusha_run_mtu_in_test(senkusha, SENKUSHA_MTU_MIN, SENKUSHA_MTU_MAX, 3, mtu_timeout_ms, mtu_in);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		CHIAKI_LOGE(senkusha->log, "Senkusha MTU in test failed");
 		goto disconnect;
 	}
 
-	err = senkusha_run_mtu_out_test(senkusha, *mtu_in, 576, 1454, 3, mtu_timeout_ms, mtu_out);
+	err = senkusha_run_mtu_out_test(senkusha, *mtu_in, SENKUSHA_MTU_MIN, SENKUSHA_MTU_MAX, 3, mtu_timeout_ms, mtu_out);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		CHIAKI_LOGE(senkusha->log, "Senkusha MTU out test failed");

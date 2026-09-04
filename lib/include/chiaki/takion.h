@@ -47,6 +47,7 @@ typedef struct chiaki_takion_av_packet_t
 	uint8_t byte_at_0x2c;
 
 	uint64_t key_pos;
+	bool data_decrypted;
 
 	uint8_t *data; // not owned
 	size_t data_size;
@@ -157,6 +158,11 @@ typedef struct chiaki_takion_t
 	bool video_queue_initialized;
 	int64_t video_queue_head_wait_start_us;
 	uint64_t video_queue_head_wait_seq_num;
+	uint64_t diag_video_packets;
+	uint64_t diag_video_bytes;
+	uint64_t diag_audio_packets;
+	uint64_t diag_audio_bytes;
+	int64_t diag_av_last_us;
 	ChiakiTakionSendBuffer send_buffer;
 
 	ChiakiTakionCallback cb;

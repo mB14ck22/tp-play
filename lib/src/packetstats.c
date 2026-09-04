@@ -50,9 +50,11 @@ CHIAKI_EXPORT void chiaki_packet_stats_push_generation(ChiakiPacketStats *stats,
 
 CHIAKI_EXPORT void chiaki_packet_stats_push_seq(ChiakiPacketStats *stats, ChiakiSeqNum16 seq_num)
 {
+	chiaki_mutex_lock(&stats->mutex);
 	stats->seq_received++;
 	if(chiaki_seq_num_16_gt(seq_num, stats->seq_max))
 		stats->seq_max = seq_num;
+	chiaki_mutex_unlock(&stats->mutex);
 }
 
 CHIAKI_EXPORT void chiaki_packet_stats_get(ChiakiPacketStats *stats, bool reset, uint64_t *received, uint64_t *lost)

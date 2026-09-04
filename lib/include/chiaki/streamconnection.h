@@ -19,6 +19,7 @@ extern "C" {
 #endif
 
 typedef struct chiaki_session_t ChiakiSession;
+typedef struct chiaki_av_work_item_t ChiakiAVWorkItem;
 
 typedef enum chiaki_dualsense_effect_intensity_t
 {
@@ -42,6 +43,17 @@ typedef struct chiaki_stream_connection_t
 	ChiakiAudioReceiver *audio_receiver;
 	ChiakiVideoReceiver *video_receiver;
 	ChiakiAudioReceiver *haptics_receiver;
+	/* AV assembly/FEC must never block the UDP receive thread. */
+	ChiakiThread av_worker_thread;
+	ChiakiMutex av_worker_mutex;
+	ChiakiCond av_worker_cond;
+	ChiakiAVWorkItem *av_worker_head;
+	ChiakiAVWorkItem *av_worker_tail;
+	size_t av_worker_queued_bytes;
+	size_t av_worker_queued_packets;
+	uint64_t av_worker_dropped_packets;
+	bool av_worker_active;
+	bool av_worker_stop;
 	double packet_loss_max;
 	uint8_t motion_counter[4];
 	uint8_t led_state[3];

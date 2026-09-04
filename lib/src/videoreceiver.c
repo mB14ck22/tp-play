@@ -7,6 +7,25 @@
 
 static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *video_receiver);
 
+static bool chiaki_video_receiver_request_idr_if_needed(ChiakiVideoReceiver *video_receiver, const char *reason)
+{
+	if(!video_receiver->session->connect_info.enable_idr_on_fec_failure)
+		return false;
+	if(chiaki_video_receiver_get_waiting_for_idr(video_receiver))
+		return true;
+
+	ChiakiErrorCode err = stream_connection_send_idr_request(&video_receiver->session->stream_connection);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGW(video_receiver->log, "%s; IDR request failed: %s", reason, chiaki_error_string(err));
+		return false;
+	}
+
+	chiaki_video_receiver_set_waiting_for_idr(video_receiver, true);
+	CHIAKI_LOGI(video_receiver->log, "%s; waiting for IDR frame", reason);
+	return true;
+}
+
 static void add_ref_frame(ChiakiVideoReceiver *video_receiver, int32_t frame)
 {
 	if(video_receiver->reference_frames[0] != -1)
@@ -158,7 +177,8 @@ CHIAKI_EXPORT void chiaki_video_receiver_av_packet(ChiakiVideoReceiver *video_re
 			CHIAKI_LOGW(video_receiver->log, "Video receiver could not flush frame.");
 
 		ChiakiSeqNum16 next_frame_expected = (ChiakiSeqNum16)(video_receiver->frame_index_prev_complete + 1);
-		if(chiaki_seq_num_16_gt(frame_index, next_frame_expected)
+		if(!chiaki_video_receiver_get_waiting_for_idr(video_receiver)
+			&& chiaki_seq_num_16_gt(frame_index, next_frame_expected)
 			&& !(frame_index == 1 && video_receiver->frame_index_cur < 0)) // ok for frame 1
 		{
 			CHIAKI_LOGW(video_receiver->log, "Detected missing or corrupt frame(s) from %d to %d", next_frame_expected, (int)frame_index);
@@ -193,6 +213,7 @@ static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *vi
 	uint8_t *frame;
 	size_t frame_size;
 	ChiakiFrameProcessorFlushResult flush_result = chiaki_frame_processor_flush(&video_receiver->frame_processor, &frame, &frame_size);
+	bool already_waiting_for_idr = chiaki_video_receiver_get_waiting_for_idr(video_receiver);
 
 	if(flush_result == CHIAKI_FRAME_PROCESSOR_FLUSH_RESULT_FAILED
 		|| flush_result == CHIAKI_FRAME_PROCESSOR_FLUSH_RESULT_FEC_FAILED)
@@ -200,44 +221,39 @@ static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *vi
 		if (flush_result == CHIAKI_FRAME_PROCESSOR_FLUSH_RESULT_FEC_FAILED)
 		{
 			ChiakiSeqNum16 next_frame_expected = (ChiakiSeqNum16)(video_receiver->frame_index_prev_complete + 1);
-			stream_connection_send_corrupt_frame(&video_receiver->session->stream_connection, next_frame_expected, video_receiver->frame_index_cur);
+			if(!already_waiting_for_idr)
+			{
+				ChiakiErrorCode corrupt_err = stream_connection_send_corrupt_frame(
+					&video_receiver->session->stream_connection,
+					next_frame_expected,
+					video_receiver->frame_index_cur);
+				if(corrupt_err != CHIAKI_ERR_SUCCESS)
+					CHIAKI_LOGW(video_receiver->log, "Error sending corrupt frame after FEC failure: %s", chiaki_error_string(corrupt_err));
+			}
 			if(video_receiver->session->connect_info.enable_idr_on_fec_failure)
 			{
-				bool waiting_for_idr = chiaki_video_receiver_get_waiting_for_idr(video_receiver);
-				bool idr_request_sent = waiting_for_idr;
-				if(!waiting_for_idr)
-				{
-					ChiakiErrorCode err = stream_connection_send_idr_request(&video_receiver->session->stream_connection);
-					idr_request_sent = err == CHIAKI_ERR_SUCCESS;
-					if(err == CHIAKI_ERR_SUCCESS)
-					{
-						chiaki_video_receiver_set_waiting_for_idr(video_receiver, true);
-						CHIAKI_LOGI(video_receiver->log, "FEC failed, waiting for IDR frame");
-					}
-					else
-					{
-						CHIAKI_LOGW(video_receiver->log, "FEC failed and IDR request could not be sent: %s", chiaki_error_string(err));
-					}
-				}
-				else
-				{
-					CHIAKI_LOGW(video_receiver->log, "Video FEC failure, already waiting for requested IDR");
-				}
+				bool idr_request_sent = chiaki_video_receiver_request_idr_if_needed(video_receiver, "Video FEC failure");
 				ChiakiEvent event = { 0 };
 				event.type = CHIAKI_EVENT_VIDEO_FEC_FAILURE;
 				event.video_fec_failure.frame_index = video_receiver->frame_index_cur;
 				event.video_fec_failure.idr_request_sent = idr_request_sent;
 				chiaki_session_send_event(video_receiver->session, &event);
 			}
-		int32_t lost = video_receiver->frame_index_cur - next_frame_expected + 1;
-		chiaki_mutex_lock(&video_receiver->frames_lost_mutex);
-		video_receiver->frames_lost += lost;
-		video_receiver->frames_lost_total += lost;
-		chiaki_mutex_unlock(&video_receiver->frames_lost_mutex);
-		video_receiver->frame_index_prev = video_receiver->frame_index_cur;
-	}
-		CHIAKI_LOGW(video_receiver->log, "Failed to complete frame %d", (int)video_receiver->frame_index_cur);
-		return CHIAKI_ERR_UNKNOWN;
+			int32_t lost = video_receiver->frame_index_cur - next_frame_expected + 1;
+			chiaki_mutex_lock(&video_receiver->frames_lost_mutex);
+			video_receiver->frames_lost += lost;
+			video_receiver->frames_lost_total += lost;
+			chiaki_mutex_unlock(&video_receiver->frames_lost_mutex);
+			video_receiver->frame_index_prev = video_receiver->frame_index_cur;
+		}
+		if(already_waiting_for_idr)
+			CHIAKI_LOGV(video_receiver->log, "Discarding incomplete frame %d while waiting for IDR", (int)video_receiver->frame_index_cur);
+		else
+			CHIAKI_LOGW(video_receiver->log, "Failed to complete frame %d", (int)video_receiver->frame_index_cur);
+		// The damaged frame was accounted for and recovery was requested. Returning
+		// success keeps the receive loop from synchronously logging another warning
+		// for every subsequent frame while the network thread is trying to catch up.
+		return CHIAKI_ERR_SUCCESS;
 	}
 
 	bool succ = flush_result != CHIAKI_FRAME_PROCESSOR_FLUSH_RESULT_FEC_FAILED;
@@ -287,6 +303,7 @@ static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *vi
 					video_receiver->frames_lost_total++;
 					chiaki_mutex_unlock(&video_receiver->frames_lost_mutex);
 					CHIAKI_LOGW(video_receiver->log, "Missing reference frame %d for decoding frame %d", (int)ref_frame_index, (int)video_receiver->frame_index_cur);
+					chiaki_video_receiver_request_idr_if_needed(video_receiver, "Video reference chain broken");
 				}
 			}
 		}
@@ -302,6 +319,7 @@ static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *vi
 		{
 			succ = false;
 			CHIAKI_LOGW(video_receiver->log, "Video callback did not process frame successfully.");
+			chiaki_video_receiver_request_idr_if_needed(video_receiver, "Video decoder rejected frame");
 		}
 		else
 		{

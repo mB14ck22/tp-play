@@ -12,6 +12,9 @@
 #include <string.h>
 #include <inttypes.h>
 #include <assert.h>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #ifndef _WIN32
 #include <unistd.h>
 #include <sys/types.h>
@@ -34,6 +37,18 @@
 
 #define HEARTBEAT_INTERVAL_MS 1000
 
+#define AV_WORKER_MAX_BYTES (8 * 1024 * 1024)
+#define AV_WORKER_MAX_PACKETS 8192
+
+#if defined(__APPLE__) && TARGET_OS_IOS
+// The iOS video reorder window can retain encrypted packets for 64 ms on
+// high-jitter remote paths. Keep enough generated key stream available until
+// those packets are dispatched and decrypted. 0x400 * 4 KiB = 4 MiB.
+#define STREAM_CONNECTION_REMOTE_KEY_BUF_CHUNKS 0x400
+#else
+#define STREAM_CONNECTION_REMOTE_KEY_BUF_CHUNKS CHIAKI_GKCRYPT_KEY_BUF_BLOCKS_DEFAULT
+#endif
+
 
 typedef enum {
 	STATE_IDLE,
@@ -41,6 +56,12 @@ typedef enum {
 	STATE_EXPECT_BANG,
 	STATE_EXPECT_STREAMINFO
 } StreamConnectionState;
+
+struct chiaki_av_work_item_t {
+	ChiakiTakionAVPacket packet;
+	uint8_t *data;
+	struct chiaki_av_work_item_t *next;
+};
 
 void chiaki_session_send_event(ChiakiSession *session, ChiakiEvent *event);
 
@@ -59,6 +80,8 @@ static void stream_connection_takion_data_expect_bang(ChiakiStreamConnection *st
 static void stream_connection_takion_data_expect_streaminfo(ChiakiStreamConnection *stream_connection, uint8_t *buf, size_t buf_size);
 static ChiakiErrorCode stream_connection_send_streaminfo_ack(ChiakiStreamConnection *stream_connection);
 static void stream_connection_takion_av(ChiakiStreamConnection *stream_connection, ChiakiTakionAVPacket *packet);
+static ChiakiErrorCode stream_connection_av_worker_start(ChiakiStreamConnection *stream_connection);
+static void stream_connection_av_worker_stop(ChiakiStreamConnection *stream_connection);
 static ChiakiErrorCode stream_connection_send_heartbeat(ChiakiStreamConnection *stream_connection);
 
 CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_init(ChiakiStreamConnection *stream_connection, ChiakiSession *session, double packet_loss_max)
@@ -93,6 +116,13 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_init(ChiakiStreamConnecti
 	stream_connection->video_receiver = NULL;
 	stream_connection->audio_receiver = NULL;
 	stream_connection->haptics_receiver = NULL;
+	stream_connection->av_worker_head = NULL;
+	stream_connection->av_worker_tail = NULL;
+	stream_connection->av_worker_queued_bytes = 0;
+	stream_connection->av_worker_queued_packets = 0;
+	stream_connection->av_worker_dropped_packets = 0;
+	stream_connection->av_worker_active = false;
+	stream_connection->av_worker_stop = false;
 
 	err = chiaki_mutex_init(&stream_connection->feedback_sender_mutex, false);
 	if(err != CHIAKI_ERR_SUCCESS)
@@ -139,7 +169,8 @@ CHIAKI_EXPORT void chiaki_stream_connection_fini(ChiakiStreamConnection *stream_
 static bool state_finished_cond_check(void *user)
 {
 	ChiakiStreamConnection *stream_connection = user;
-	return stream_connection->state_finished || stream_connection->should_stop || stream_connection->remote_disconnected;
+	return stream_connection->state_finished || stream_connection->state_failed
+		|| stream_connection->should_stop || stream_connection->remote_disconnected;
 }
 
 CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_run(ChiakiStreamConnection *stream_connection, chiaki_socket_t *socket)
@@ -207,6 +238,14 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_run(ChiakiStreamConnectio
 		goto err_haptics_receiver;
 	}
 
+	err = stream_connection_av_worker_start(stream_connection);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGE(session->log, "StreamConnection failed to start AV worker");
+		chiaki_mutex_unlock(&stream_connection->state_mutex);
+		goto err_video_receiver;
+	}
+
 	stream_connection->state = STATE_TAKION_CONNECT;
 	stream_connection->state_finished = false;
 	stream_connection->state_failed = false;
@@ -216,7 +255,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_run(ChiakiStreamConnectio
 	{
 		CHIAKI_LOGE(session->log, "StreamConnection connect failed");
 		chiaki_mutex_unlock(&stream_connection->state_mutex);
-		goto err_video_receiver;
+		goto err_av_worker;
 	}
 
 	err = chiaki_congestion_control_start(&stream_connection->congestion_control, &stream_connection->takion, &stream_connection->packet_stats, stream_connection->packet_loss_max);
@@ -361,6 +400,9 @@ close_takion:
 	chiaki_takion_close(&stream_connection->takion);
 	CHIAKI_LOGI(session->log, "StreamConnection closed takion");
 
+err_av_worker:
+	stream_connection_av_worker_stop(stream_connection);
+
 err_video_receiver:
 	chiaki_mutex_lock(&stream_connection->state_mutex);
 	chiaki_video_receiver_free(stream_connection->video_receiver);
@@ -402,12 +444,22 @@ static void stream_connection_takion_cb(ChiakiTakionEvent *event, void *user)
 		case CHIAKI_TAKION_EVENT_TYPE_CONNECTED:
 		case CHIAKI_TAKION_EVENT_TYPE_DISCONNECT:
 			chiaki_mutex_lock(&stream_connection->state_mutex);
-			if(stream_connection->state == STATE_TAKION_CONNECT)
+			if(event->type == CHIAKI_TAKION_EVENT_TYPE_CONNECTED)
 			{
-				stream_connection->state_finished = event->type == CHIAKI_TAKION_EVENT_TYPE_CONNECTED;
-				stream_connection->state_failed = event->type == CHIAKI_TAKION_EVENT_TYPE_DISCONNECT;
-				chiaki_cond_signal(&stream_connection->state_cond);
+				if(stream_connection->state == STATE_TAKION_CONNECT)
+					stream_connection->state_finished = true;
 			}
+			else
+			{
+				/* A transport failure is terminal in every phase, including the
+				 * steady-state stream. Previously it was ignored outside connect,
+				 * leaving heartbeat/IDR threads writing to a closed socket forever. */
+				stream_connection->state_failed = true;
+				stream_connection->remote_disconnected = true;
+				if(!stream_connection->remote_disconnect_reason)
+					stream_connection->remote_disconnect_reason = strdup("Transport disconnected");
+			}
+			chiaki_cond_signal(&stream_connection->state_cond);
 			chiaki_mutex_unlock(&stream_connection->state_mutex);
 			break;
 		case CHIAKI_TAKION_EVENT_TYPE_DATA:
@@ -693,7 +745,7 @@ static void stream_connection_takion_data_idle(ChiakiStreamConnection *stream_co
 	case tkproto_TakionMessage_PayloadType_CONNECTIONQUALITY:
 	{
 		tkproto_ConnectionQualityPayload q = msg.connection_quality_payload;
-		CHIAKI_LOGV(
+		CHIAKI_LOGI(
 			stream_connection->log,
 			"StreamConnection received connection quality: target_bitrate=%d, "
 			"upstream_bitrate=%d, upstream_loss=%.4f, "
@@ -702,7 +754,7 @@ static void stream_connection_takion_data_idle(ChiakiStreamConnection *stream_co
 			 q.upstream_loss,
 			 q.disable_upstream_audio, q.rtt, q.loss);
 		stream_connection->measured_bitrate = chiaki_stream_stats_bitrate(&stream_connection->video_receiver->frame_processor.stream_stats, stream_connection->session->connect_info.video_profile.max_fps) / 1000000.0;
-		CHIAKI_LOGV(stream_connection->log, "StreamConnection measured bitrate: %.4f MBit/s", stream_connection->measured_bitrate);
+		CHIAKI_LOGI(stream_connection->log, "StreamConnection measured bitrate: %.4f MBit/s", stream_connection->measured_bitrate);
 		chiaki_stream_stats_reset(&stream_connection->video_receiver->frame_processor.stream_stats);
 		break;
 	}
@@ -728,7 +780,7 @@ static ChiakiErrorCode stream_connection_init_crypt(ChiakiStreamConnection *stre
 		CHIAKI_LOGE(stream_connection->log, "StreamConnection failed to initialize local GKCrypt with index 2");
 		return CHIAKI_ERR_UNKNOWN;
 	}
-	stream_connection->gkcrypt_remote = chiaki_gkcrypt_new(stream_connection->log, CHIAKI_GKCRYPT_KEY_BUF_BLOCKS_DEFAULT, 3, session->handshake_key, stream_connection->ecdh_secret);
+	stream_connection->gkcrypt_remote = chiaki_gkcrypt_new(stream_connection->log, STREAM_CONNECTION_REMOTE_KEY_BUF_CHUNKS, 3, session->handshake_key, stream_connection->ecdh_secret);
 	if(!stream_connection->gkcrypt_remote)
 	{
 		CHIAKI_LOGE(stream_connection->log, "StreamConnection failed to initialize remote GKCrypt with index 3");
@@ -1232,14 +1284,141 @@ static ChiakiErrorCode stream_connection_send_disconnect(ChiakiStreamConnection 
 
 static void stream_connection_takion_av(ChiakiStreamConnection *stream_connection, ChiakiTakionAVPacket *packet)
 {
-	chiaki_gkcrypt_decrypt(stream_connection->gkcrypt_remote, packet->key_pos + CHIAKI_GKCRYPT_BLOCK_SIZE, packet->data, packet->data_size);
+	if(!packet->data_decrypted)
+	{
+		ChiakiErrorCode err = chiaki_gkcrypt_decrypt(stream_connection->gkcrypt_remote,
+			packet->key_pos + CHIAKI_GKCRYPT_BLOCK_SIZE, packet->data, packet->data_size);
+		if(err != CHIAKI_ERR_SUCCESS)
+			return;
+	}
 
-	if(packet->is_video)
-		chiaki_video_receiver_av_packet(stream_connection->video_receiver, packet);
-	else if(packet->is_haptics)
-	    chiaki_audio_receiver_av_packet(stream_connection->haptics_receiver, packet);
+	ChiakiAVWorkItem *item = malloc(sizeof(*item));
+	if(!item)
+		return;
+	item->data = malloc(packet->data_size);
+	if(!item->data)
+	{
+		free(item);
+		return;
+	}
+	memcpy(item->data, packet->data, packet->data_size);
+	item->packet = *packet;
+	item->packet.data = item->data;
+	item->packet.data_decrypted = true;
+	item->next = NULL;
+
+	chiaki_mutex_lock(&stream_connection->av_worker_mutex);
+	if(stream_connection->av_worker_stop
+		|| stream_connection->av_worker_queued_packets >= AV_WORKER_MAX_PACKETS
+		|| stream_connection->av_worker_queued_bytes + packet->data_size > AV_WORKER_MAX_BYTES)
+	{
+		uint64_t dropped = ++stream_connection->av_worker_dropped_packets;
+		if(dropped == 1 || dropped % 256 == 0)
+			CHIAKI_LOGW(stream_connection->log,
+				"AV worker queue overflow: dropped=%llu queued_packets=%llu queued_bytes=%llu",
+				(unsigned long long)dropped,
+				(unsigned long long)stream_connection->av_worker_queued_packets,
+				(unsigned long long)stream_connection->av_worker_queued_bytes);
+		chiaki_mutex_unlock(&stream_connection->av_worker_mutex);
+		free(item->data);
+		free(item);
+		return;
+	}
+	if(stream_connection->av_worker_tail)
+		stream_connection->av_worker_tail->next = item;
 	else
-		chiaki_audio_receiver_av_packet(stream_connection->audio_receiver, packet);
+		stream_connection->av_worker_head = item;
+	stream_connection->av_worker_tail = item;
+	stream_connection->av_worker_queued_bytes += packet->data_size;
+	stream_connection->av_worker_queued_packets++;
+	chiaki_cond_signal(&stream_connection->av_worker_cond);
+	chiaki_mutex_unlock(&stream_connection->av_worker_mutex);
+}
+
+static void *stream_connection_av_worker_thread(void *user)
+{
+	ChiakiStreamConnection *stream_connection = user;
+	chiaki_mutex_lock(&stream_connection->av_worker_mutex);
+	while(true)
+	{
+		while(!stream_connection->av_worker_stop && !stream_connection->av_worker_head)
+			chiaki_cond_wait(&stream_connection->av_worker_cond, &stream_connection->av_worker_mutex);
+		if(stream_connection->av_worker_stop)
+			break;
+
+		ChiakiAVWorkItem *item = stream_connection->av_worker_head;
+		stream_connection->av_worker_head = item->next;
+		if(!stream_connection->av_worker_head)
+			stream_connection->av_worker_tail = NULL;
+		stream_connection->av_worker_queued_bytes -= item->packet.data_size;
+		stream_connection->av_worker_queued_packets--;
+		chiaki_mutex_unlock(&stream_connection->av_worker_mutex);
+
+		if(item->packet.is_video)
+			chiaki_video_receiver_av_packet(stream_connection->video_receiver, &item->packet);
+		else if(item->packet.is_haptics)
+			chiaki_audio_receiver_av_packet(stream_connection->haptics_receiver, &item->packet);
+		else
+			chiaki_audio_receiver_av_packet(stream_connection->audio_receiver, &item->packet);
+		free(item->data);
+		free(item);
+
+		chiaki_mutex_lock(&stream_connection->av_worker_mutex);
+	}
+	chiaki_mutex_unlock(&stream_connection->av_worker_mutex);
+	return NULL;
+}
+
+static ChiakiErrorCode stream_connection_av_worker_start(ChiakiStreamConnection *stream_connection)
+{
+	ChiakiErrorCode err = chiaki_mutex_init(&stream_connection->av_worker_mutex, false);
+	if(err != CHIAKI_ERR_SUCCESS)
+		return err;
+	err = chiaki_cond_init(&stream_connection->av_worker_cond);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		chiaki_mutex_fini(&stream_connection->av_worker_mutex);
+		return err;
+	}
+	stream_connection->av_worker_stop = false;
+	err = chiaki_thread_create(&stream_connection->av_worker_thread, stream_connection_av_worker_thread, stream_connection);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		chiaki_cond_fini(&stream_connection->av_worker_cond);
+		chiaki_mutex_fini(&stream_connection->av_worker_mutex);
+		return err;
+	}
+	chiaki_thread_set_name(&stream_connection->av_worker_thread, "Chiaki AV Worker");
+	stream_connection->av_worker_active = true;
+	return CHIAKI_ERR_SUCCESS;
+}
+
+static void stream_connection_av_worker_stop(ChiakiStreamConnection *stream_connection)
+{
+	if(!stream_connection->av_worker_active)
+		return;
+	chiaki_mutex_lock(&stream_connection->av_worker_mutex);
+	stream_connection->av_worker_stop = true;
+	chiaki_cond_signal(&stream_connection->av_worker_cond);
+	chiaki_mutex_unlock(&stream_connection->av_worker_mutex);
+	chiaki_thread_join(&stream_connection->av_worker_thread, NULL);
+
+	ChiakiAVWorkItem *item = stream_connection->av_worker_head;
+	while(item)
+	{
+		ChiakiAVWorkItem *next = item->next;
+		free(item->data);
+		free(item);
+		item = next;
+	}
+	stream_connection->av_worker_head = NULL;
+	stream_connection->av_worker_tail = NULL;
+	stream_connection->av_worker_queued_bytes = 0;
+	stream_connection->av_worker_queued_packets = 0;
+	stream_connection->av_worker_dropped_packets = 0;
+	stream_connection->av_worker_active = false;
+	chiaki_cond_fini(&stream_connection->av_worker_cond);
+	chiaki_mutex_fini(&stream_connection->av_worker_mutex);
 }
 
 static ChiakiErrorCode stream_connection_send_heartbeat(ChiakiStreamConnection *stream_connection)

@@ -34,6 +34,7 @@ typedef struct chiaki_gkcrypt_t {
 	uint64_t key_buf_key_pos_min; // minimal key pos currently in key_buf
 	size_t key_buf_start_offset; // offset in key_buf of the minimal key pos
 	uint64_t last_key_pos;        // last key pos that has been requested
+	uint64_t key_buf_miss_count;
 	bool key_buf_thread_stop;
 	ChiakiMutex key_buf_mutex;
 	ChiakiCond key_buf_cond;

@@ -35,6 +35,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_gkcrypt_init(ChiakiGKCrypt *gkcrypt, Chiaki
 	gkcrypt->key_buf_key_pos_min = 0;
 	gkcrypt->key_buf_start_offset = 0;
 	gkcrypt->last_key_pos = 0;
+	gkcrypt->key_buf_miss_count = 0;
 	gkcrypt->key_buf_thread_stop = false;
 
 	ChiakiErrorCode err;
@@ -298,15 +299,14 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_gkcrypt_get_key_stream(ChiakiGKCrypt *gkcry
 	if(key_pos < gkcrypt->key_buf_key_pos_min
 		|| key_pos + buf_size >= gkcrypt->key_buf_key_pos_min + gkcrypt->key_buf_populated)
 	{
-		CHIAKI_LOGW(gkcrypt->log, "Requested key stream for key pos %#llx on GKCrypt %d, but it's not in the buffer:"
-				" key buf size %#llx, start offset: %#llx, populated: %#llx, min key pos: %#llx, last key pos: %#llx",
-				(unsigned long long)key_pos,
+		uint64_t miss_count = ++gkcrypt->key_buf_miss_count;
+		if(miss_count == 1 || miss_count % 256 == 0)
+			CHIAKI_LOGW(gkcrypt->log, "GKCrypt %d key buffer miss #%llu at %#llx (buffer min %#llx, size %#llx); generating directly",
 				gkcrypt->index,
-				(unsigned long long)gkcrypt->key_buf_size,
-				(unsigned long long)gkcrypt->key_buf_start_offset,
-				(unsigned long long)gkcrypt->key_buf_populated,
+				(unsigned long long)miss_count,
+				(unsigned long long)key_pos,
 				(unsigned long long)gkcrypt->key_buf_key_pos_min,
-				(unsigned long long)gkcrypt->last_key_pos);
+				(unsigned long long)gkcrypt->key_buf_size);
 		chiaki_mutex_unlock(&gkcrypt->key_buf_mutex);
 		err = chiaki_gkcrypt_gen_key_stream(gkcrypt, key_pos, buf, buf_size);
 	}

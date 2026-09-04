@@ -1,8 +1,11 @@
 import SwiftUI
+import UIKit
 
 struct LibraryView: View {
     @StateObject private var library = PSNLibraryStore.shared
     @State private var selectedGame: TrophyGamePreview?
+    @State private var searchQuery = ""
+    @State private var isSearchPresented = false
 
     var body: some View {
         ZStack {
@@ -12,6 +15,9 @@ struct LibraryView: View {
                     games: library.games,
                     freezesHeader: selectedGame != nil,
                     syncStatus: library.syncStatus,
+                    isSyncing: library.isLoading || library.isProfileRefreshing,
+                    searchQuery: $searchQuery,
+                    isSearchPresented: $isSearchPresented,
                     refresh: { Task { await library.sync() } }
                 ) { game in
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -34,7 +40,6 @@ struct LibraryView: View {
             }
         }
         .background(TPPlayTheme.canvas)
-        .task { await library.syncIfNeeded() }
     }
 }
 
@@ -43,8 +48,21 @@ private struct LibraryOverviewView: View {
     let games: [TrophyGamePreview]
     let freezesHeader: Bool
     let syncStatus: String
+    let isSyncing: Bool
+    @Binding var searchQuery: String
+    @Binding var isSearchPresented: Bool
     let refresh: () -> Void
     let openGame: (TrophyGamePreview) -> Void
+    @FocusState private var isSearchFocused: Bool
+
+    private var filteredGames: [TrophyGamePreview] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return games }
+        return games.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.platform.localizedCaseInsensitiveContains(query)
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,7 +70,21 @@ private struct LibraryOverviewView: View {
                 if freezesHeader {
                     LibraryFrozenHeader("LIBRARY // TROPHIES")
                 } else {
-                    TPPageHeader("LIBRARY // TROPHIES")
+                    TPPageHeader("LIBRARY // TROPHIES") {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.16)) {
+                                isSearchPresented.toggle()
+                                if !isSearchPresented { searchQuery = "" }
+                            }
+                            isSearchFocused = isSearchPresented
+                        } label: {
+                            Image(systemName: isSearchPresented ? "xmark" : "magnifyingglass")
+                                .font(.system(size: 13, weight: .black))
+                                .frame(width: 42, height: 42)
+                        }
+                        .buttonStyle(AcidButtonStyle(active: isSearchPresented))
+                        .accessibilityLabel(isSearchPresented ? "Close game search" : "Search games")
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -63,13 +95,39 @@ private struct LibraryOverviewView: View {
                 Rectangle().fill(TPPlayTheme.border).frame(height: 1)
             }
 
+            if isSearchPresented && !freezesHeader {
+                HStack(spacing: 8) {
+                    Text("QUERY >")
+                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.accent)
+                    TextField("SEARCH GAME TITLE OR PLATFORM", text: $searchQuery)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .focused($isSearchFocused)
+                        .textFieldStyle(AcidFieldStyle())
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                .background(TPPlayTheme.surface)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
                     syncNotice
                     profilePanel
                     trophySummary
-                    sectionHeader("TROPHY GROUPS", detail: "\(games.count) GROUPS")
-                    ForEach(games) { game in
+                    sectionHeader("TROPHY GROUPS", detail: "\(filteredGames.count) / \(games.count) GROUPS")
+                    if filteredGames.isEmpty {
+                        Text("NO GAME MATCHES // \(searchQuery.uppercased())")
+                            .font(.system(size: 10, weight: .black, design: .monospaced))
+                            .foregroundStyle(TPPlayTheme.secondaryText)
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(TPPlayTheme.surface)
+                            .overlay { Rectangle().stroke(TPPlayTheme.border, lineWidth: 1) }
+                    }
+                    ForEach(filteredGames) { game in
                         Button { openGame(game) } label: {
                             TrophyGameCard(game: game)
                                 .contentShape(Rectangle())
@@ -93,8 +151,6 @@ private struct LibraryOverviewView: View {
                 .frame(width: 7, height: 7)
             Text(syncStatus.uppercased())
             Spacer()
-            Button("SYNC") { refresh() }
-                .foregroundStyle(TPPlayTheme.accent)
         }
         .font(.system(size: 8, weight: .black, design: .monospaced))
         .tracking(0.6)
@@ -124,7 +180,7 @@ private struct LibraryOverviewView: View {
 
     private var identityBlock: some View {
         HStack(alignment: .top, spacing: 14) {
-            PSNAvatarPreview(initials: profile.initials, imageURL: profile.avatarURL)
+            PSNAvatarPreview(initials: profile.initials, imageData: profile.avatarData)
             VStack(alignment: .leading, spacing: 5) {
                 Text(profile.onlineID)
                     .font(.system(size: 20, weight: .black, design: .monospaced))
@@ -133,21 +189,40 @@ private struct LibraryOverviewView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 HStack(spacing: 7) {
-                    Rectangle().fill(TPPlayTheme.accent).frame(width: 7, height: 7)
-                    Text("ONLINE // PLAYING \(profile.currentGame.uppercased())")
-                        .lineLimit(1)
+                    Rectangle().fill(profile.isOnline == false ? TPPlayTheme.secondaryText : TPPlayTheme.accent).frame(width: 7, height: 7)
+                    if let currentGame = profile.currentGame, !currentGame.isEmpty {
+                        OverflowMarqueeText(currentGame.uppercased())
+                    } else {
+                        Text(profile.presenceLabel)
+                            .lineLimit(1)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .font(.system(size: 9, weight: .black, design: .monospaced))
-                .foregroundStyle(TPPlayTheme.accent)
-                Text(profile.realName.uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(TPPlayTheme.secondaryText)
+                .foregroundStyle(profile.isOnline == false ? TPPlayTheme.secondaryText : TPPlayTheme.accent)
+                if !profile.realName.isEmpty,
+                   profile.realName.caseInsensitiveCompare(profile.onlineID) != .orderedSame {
+                    Text(profile.realName.uppercased())
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(TPPlayTheme.secondaryText)
+                }
                 Text(profile.bio.uppercased())
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(TPPlayTheme.tertiaryText)
                     .lineLimit(2)
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .layoutPriority(1)
+            Button { refresh() } label: {
+                Image(systemName: isSyncing ? "ellipsis" : "arrow.clockwise")
+                    .font(.system(size: 13, weight: .black))
+                    .frame(width: 42, height: 42)
+            }
+            .buttonStyle(AcidButtonStyle(active: isSyncing))
+            .disabled(isSyncing)
+            .fixedSize()
+            .accessibilityLabel(isSyncing ? "Updating PSN library" : "Update PSN library")
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: 126, alignment: .leading)
@@ -218,6 +293,74 @@ private struct LibraryOverviewView: View {
         .font(.system(size: 9, weight: .black, design: .monospaced))
         .tracking(1)
         .foregroundStyle(TPPlayTheme.accent)
+    }
+}
+
+private struct OverflowMarqueeText: View {
+    private let text: String
+    private let speed: CGFloat = 24
+    private let leadingPause: TimeInterval = 1.25
+    @State private var contentWidth: CGFloat = 0
+    @State private var cycleStart = Date()
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let overflows = contentWidth > geometry.size.width + 1
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !overflows)) { timeline in
+                marqueeLabel
+                    .fixedSize(horizontal: true, vertical: false)
+                    .offset(x: overflows ? offset(at: timeline.date, viewportWidth: geometry.size.width) : 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+        }
+        .frame(height: 12)
+        .background {
+            marqueeLabel
+                .fixedSize(horizontal: true, vertical: false)
+                .hidden()
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: MarqueeTextWidthKey.self, value: proxy.size.width)
+                    }
+                }
+        }
+        .onPreferenceChange(MarqueeTextWidthKey.self) { contentWidth = $0 }
+        .onChange(of: text) { _, _ in cycleStart = Date() }
+        .accessibilityLabel(text)
+    }
+
+    private var marqueeLabel: some View {
+        Text(text)
+            .lineLimit(1)
+            .font(.system(size: 9, weight: .black, design: .monospaced))
+    }
+
+    private func offset(at date: Date, viewportWidth: CGFloat) -> CGFloat {
+        let distance = max(0, contentWidth - viewportWidth)
+        guard distance > 0 else { return 0 }
+        let travelDuration = TimeInterval(distance / speed)
+        let elapsed = max(0, date.timeIntervalSince(cycleStart))
+        let cycleDuration = (leadingPause * 2) + (travelDuration * 2)
+        let position = elapsed.truncatingRemainder(dividingBy: cycleDuration)
+        if position <= leadingPause { return 0 }
+        if position <= leadingPause + travelDuration {
+            return -min(distance, CGFloat(position - leadingPause) * speed)
+        }
+        if position <= (leadingPause * 2) + travelDuration { return -distance }
+        let returnElapsed = position - ((leadingPause * 2) + travelDuration)
+        return -distance + min(distance, CGFloat(returnElapsed) * speed)
+    }
+}
+
+private struct MarqueeTextWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
@@ -357,19 +500,15 @@ private struct LibrarySignedOutView: View {
 
 private struct PSNAvatarPreview: View {
     let initials: String
-    let imageURL: URL?
+    let imageData: Data?
 
     var body: some View {
         ZStack {
             TPPlayTheme.canvas
-            if let imageURL {
-                AsyncImage(url: imageURL) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        avatarFallback
-                    }
-                }
+            if let imageData, let loadedImage = UIImage(data: imageData) {
+                Image(uiImage: loadedImage)
+                    .resizable()
+                    .scaledToFill()
             } else {
                 avatarFallback
             }
@@ -378,6 +517,7 @@ private struct PSNAvatarPreview: View {
                 .padding(5)
         }
         .frame(width: 86, height: 86)
+        .clipped()
         .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
         .accessibilityLabel("PSN profile avatar")
     }
@@ -438,6 +578,10 @@ private struct TrophyGameCard: View {
                         .font(.system(size: 16, weight: .black, design: .monospaced))
                         .foregroundStyle(game.completion == 1 ? TPPlayTheme.accent : TPPlayTheme.primaryText)
                 }
+                HStack {
+                    PlatformMetadataLabel(platform: game.platform)
+                    Spacer()
+                }
                 SegmentedProgress(value: game.completion, segments: 28)
                 HStack {
                     TrophyBreakdownCompact(breakdown: game.breakdown)
@@ -453,6 +597,18 @@ private struct TrophyGameCard: View {
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
         .background(TPPlayTheme.surface)
         .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+    }
+}
+
+private struct PlatformMetadataLabel: View {
+    let platform: String
+
+    var body: some View {
+        Text(platform.replacingOccurrences(of: ",", with: "/"))
+            .font(.system(size: 8, weight: .bold, design: .monospaced))
+            .tracking(0.4)
+            .foregroundStyle(TPPlayTheme.primaryText)
+            .lineLimit(1)
     }
 }
 
@@ -873,7 +1029,8 @@ struct PSNProfilePreview {
     let onlineID: String
     let realName: String
     let bio: String
-    let currentGame: String
+    let onlineStatus: String?
+    let currentGame: String?
     let level: Int
     let levelProgress: Double
     let platinum: Int
@@ -881,16 +1038,38 @@ struct PSNProfilePreview {
     let silver: Int
     let bronze: Int
     let avatarURL: URL?
+    let avatarData: Data?
 
     var totalTrophies: Int { platinum + gold + silver + bronze }
+    var isOnline: Bool? {
+        switch onlineStatus?.lowercased() {
+        case "online": true
+        case "offline": false
+        default: nil
+        }
+    }
+    var presenceLabel: String {
+        if let currentGame, !currentGame.isEmpty {
+            return isOnline == true
+                ? "ONLINE // PLAYING \(currentGame.uppercased())"
+                : "PLAYING \(currentGame.uppercased())"
+        }
+        switch isOnline {
+        case true: return "ONLINE"
+        case false: return "OFFLINE"
+        case nil: return "STATUS UNAVAILABLE"
+        }
+    }
     var initials: String {
-        realName.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
+        let source = realName.isEmpty ? onlineID : realName
+        return source.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
     }
 
     static let preview = PSNProfilePreview(
         onlineID: "VOID_RUNNER",
         realName: "Akira Mori",
         bio: "Trophy hunter. Night shift player.",
+        onlineStatus: "online",
         currentGame: "Astro Bot",
         level: 342,
         levelProgress: 0.76,
@@ -899,6 +1078,7 @@ struct PSNProfilePreview {
         silver: 286,
         bronze: 886
         , avatarURL: nil
+        , avatarData: nil
     )
 }
 

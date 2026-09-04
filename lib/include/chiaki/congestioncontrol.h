@@ -19,6 +19,10 @@ typedef struct chiaki_congestion_control_t
 	ChiakiBoolPredCond stop_cond;
 	double packet_loss;
 	double packet_loss_max;
+	uint32_t sample_count;
+	uint32_t severe_loss_samples;
+	uint32_t recovery_samples;
+	bool recovery_mode;
 } ChiakiCongestionControl;
 
 CHIAKI_EXPORT ChiakiErrorCode chiaki_congestion_control_start(ChiakiCongestionControl *control, ChiakiTakion *takion, ChiakiPacketStats *stats, double packet_loss_max);

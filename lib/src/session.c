@@ -684,11 +684,14 @@ ctrl_failed:
 	if(err == CHIAKI_ERR_DISCONNECTED)
 	{
 		CHIAKI_LOGE(session->log, "Remote disconnected from StreamConnection");
-		if(!strcmp(session->stream_connection.remote_disconnect_reason, "Server shutting down"))
+		const char *disconnect_reason = session->stream_connection.remote_disconnect_reason
+			? session->stream_connection.remote_disconnect_reason
+			: "Transport disconnected";
+		if(!strcmp(disconnect_reason, "Server shutting down"))
 			session->quit_reason = CHIAKI_QUIT_REASON_STREAM_CONNECTION_REMOTE_SHUTDOWN;
 		else
 			session->quit_reason = CHIAKI_QUIT_REASON_STREAM_CONNECTION_REMOTE_DISCONNECTED;
-		session->quit_reason_str = strdup(session->stream_connection.remote_disconnect_reason);
+		session->quit_reason_str = strdup(disconnect_reason);
 	}
 	else if(err != CHIAKI_ERR_SUCCESS && err != CHIAKI_ERR_CANCELED)
 	{

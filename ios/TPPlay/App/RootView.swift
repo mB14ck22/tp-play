@@ -9,7 +9,10 @@ private enum AppSection: String, CaseIterable {
 }
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var psnLibrary = PSNLibraryStore.shared
     @State private var selection = AppSection.community
+    @State private var didRunLaunchProfileRefresh = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -33,6 +36,15 @@ struct RootView: View {
         .ignoresSafeArea(edges: .bottom)
         .preferredColorScheme(.dark)
         .tint(TPPlayTheme.accent)
+        .task {
+            guard !didRunLaunchProfileRefresh else { return }
+            didRunLaunchProfileRefresh = true
+            await psnLibrary.refreshProfile(force: true)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active, didRunLaunchProfileRefresh else { return }
+            Task { await psnLibrary.refreshProfile() }
+        }
     }
 }
 

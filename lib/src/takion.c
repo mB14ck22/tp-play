@@ -38,14 +38,33 @@
 
 // VERY similar to SCTP, see RFC 4960
 
+#if defined(__APPLE__) && TARGET_OS_IOS
+// 30 Mbit/s over the observed ~56 ms remote path already has a bandwidth-delay
+// product above 200 KiB. The upstream ~100 KiB receive buffer can overflow
+// before the Takion thread gets scheduled, turning bursts into real packet loss.
+#define TAKION_A_RWND 0x400000 // 4 MiB
+#else
 #define TAKION_A_RWND 0x19000
+#endif
 #define TAKION_OUTBOUND_STREAMS 0x64
 #define TAKION_INBOUND_STREAMS 0x64
 
+#if defined(__APPLE__) && TARGET_OS_IOS
+// Reliable control messages can span substantially more than 16 sequence
+// numbers during a 20 Mbit/s startup burst on a ~70 ms routed path. Keep them
+// until the missing predecessor is retransmitted instead of dropping the tail
+// and turning one loss into a persistent control-channel retry storm.
+#define TAKION_REORDER_QUEUE_SIZE_EXP 8 // => 256 entries
+#define TAKION_AV_VIDEO_REORDER_QUEUE_SIZE_EXP 10 // => 1024 entries
+// RTT is not packet-reordering delay. Holding a damaged frame for 120 ms lets
+// later frames pile up during a burst; one frame interval is sufficient here.
+#define TAKION_AV_REORDER_TIMEOUT_US 16000
+#else
 #define TAKION_REORDER_QUEUE_SIZE_EXP 4 // => 16 entries
 #define TAKION_AV_VIDEO_REORDER_QUEUE_SIZE_EXP 6 // => 64 entries
 #define TAKION_AV_REORDER_TIMEOUT_US 16000 // ~1 frame at 60fps
-#define TAKION_SEND_BUFFER_SIZE 16
+#endif
+#define TAKION_SEND_BUFFER_SIZE 64
 
 #define TAKION_POSTPONE_PACKETS_SIZE 32
 
@@ -265,6 +284,12 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, Chiaki
 			ret = CHIAKI_ERR_NETWORK;
 			goto error_sock;
 		}
+#if defined(__APPLE__) && TARGET_OS_IOS
+		socklen_t actual_rcvbuf_size = sizeof(int);
+		int actual_rcvbuf = 0;
+		if(getsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, &actual_rcvbuf, &actual_rcvbuf_size) == 0)
+			CHIAKI_LOGI(takion->log, "Takion UDP receive buffer: %d bytes", actual_rcvbuf);
+#endif
 
 #if defined(__APPLE__) && TARGET_OS_OSX
 		SInt32 majorVersion;
@@ -353,6 +378,12 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, Chiaki
 			ret = CHIAKI_ERR_NETWORK;
 			goto error_sock;
 		}
+#if defined(__APPLE__) && TARGET_OS_IOS
+		socklen_t actual_rcvbuf_size = sizeof(int);
+		int actual_rcvbuf = 0;
+		if(getsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, &actual_rcvbuf, &actual_rcvbuf_size) == 0)
+			CHIAKI_LOGI(takion->log, "Takion UDP receive buffer: %d bytes", actual_rcvbuf);
+#endif
 		if(info->ip_dontfrag)
 		{
 #if defined(__APPLE__) && TARGET_OS_OSX
@@ -919,7 +950,7 @@ static ChiakiErrorCode takion_handshake(ChiakiTakion *takion, uint32_t *seq_num_
 static void takion_data_drop(uint64_t seq_num, void *elem_user, void *cb_user)
 {
 	ChiakiTakion *takion = cb_user;
-	CHIAKI_LOGE(takion->log, "Takion dropping data with seq num %#llx", (unsigned long long)seq_num);
+	CHIAKI_LOGV(takion->log, "Takion dropping data with seq num %#llx", (unsigned long long)seq_num);
 	TakionDataPacketEntry *entry = elem_user;
 	free(entry->packet_buf);
 	free(entry);
@@ -928,7 +959,10 @@ static void takion_data_drop(uint64_t seq_num, void *elem_user, void *cb_user)
 static void takion_av_drop(uint64_t seq_num, void *elem_user, void *cb_user)
 {
 	ChiakiTakion *takion = cb_user;
-	CHIAKI_LOGD(takion->log, "Takion dropping AV packet with index %#llx", (unsigned long long)seq_num);
+	// One delayed burst can contain hundreds of stale AV packets. Logging every
+	// one on the receive thread makes that burst more expensive and prolongs the
+	// very starvation being recovered from.
+	CHIAKI_LOGV(takion->log, "Takion dropping AV packet with index %#llx", (unsigned long long)seq_num);
 	TakionAVPacketEntry *entry = elem_user;
 	free(entry->buf);
 	free(entry);
@@ -969,7 +1003,10 @@ static void takion_av_queue_flush_with_timeout(ChiakiTakion *takion, ChiakiReord
 			*head_wait_start_us = 0;
 
 		if(chiaki_reorder_queue_count(queue) == 0)
+		{
+			*head_wait_start_us = 0;
 			break;
+		}
 
 		if(*head_wait_start_us != 0 && queue->begin != *head_wait_seq_num)
 		{
@@ -999,8 +1036,9 @@ static void takion_av_queue_flush_with_timeout(ChiakiTakion *takion, ChiakiReord
 		if(now - *head_wait_start_us <= TAKION_AV_REORDER_TIMEOUT_US)
 			break;
 
-		// Timeout exceeded: skip directly to the first buffered packet so startup
-		// and burst reordering only pay a single timeout.
+		// Timeout exceeded: skip directly to the first buffered packet. A later
+		// gap gets its own deadline; otherwise the first expired gap would leave
+		// the queue in permanent immediate-drop mode for the rest of the session.
 		uint64_t skipped = 0;
 		while(skipped < queue->count)
 		{
@@ -1013,7 +1051,7 @@ static void takion_av_queue_flush_with_timeout(ChiakiTakion *takion, ChiakiReord
 		if(skipped >= queue->count)
 			break;
 
-		CHIAKI_LOGD(takion->log, "Takion AV reorder timeout: skipping %llu missing packet(s) before %#llx",
+		CHIAKI_LOGV(takion->log, "Takion AV reorder timeout: skipping %llu missing packet(s) before %#llx",
 			(unsigned long long)skipped,
 			(unsigned long long)queue->seq_num_add(queue->begin, skipped));
 		queue->begin = queue->seq_num_add(queue->begin, skipped);
@@ -1066,6 +1104,11 @@ static void *takion_thread_func(void *user)
 	takion->video_queue_initialized = false;
 	takion->video_queue_head_wait_start_us = 0;
 	takion->video_queue_head_wait_seq_num = 0;
+	takion->diag_video_packets = 0;
+	takion->diag_video_bytes = 0;
+	takion->diag_audio_packets = 0;
+	takion->diag_audio_bytes = 0;
+	takion->diag_av_last_us = chiaki_time_now_monotonic_us();
 
 	uint32_t seq_num_remote_initial;
 	if(takion_handshake(takion, &seq_num_remote_initial) != CHIAKI_ERR_SUCCESS)
@@ -1419,9 +1462,9 @@ static void takion_handle_packet_message_data(ChiakiTakion *takion, uint8_t *pac
 
 static void takion_handle_packet_message_data_ack(ChiakiTakion *takion, uint8_t flags, uint8_t *buf, size_t buf_size)
 {
-	if(buf_size != 0xc)
+	if(buf_size < 0xc)
 	{
-		CHIAKI_LOGE(takion->log, "Takion received data ack with size %zx != %#x", buf_size, 0xc);
+		CHIAKI_LOGE(takion->log, "Takion received data ack with size %zx < %#x", buf_size, 0xc);
 		return;
 	}
 
@@ -1430,9 +1473,12 @@ static void takion_handle_packet_message_data_ack(ChiakiTakion *takion, uint8_t 
 	uint16_t gap_ack_blocks_count = ntohs(*((chiaki_unaligned_uint16_t *)(buf + 8)));
 	uint16_t dup_tsns_count = ntohs(*((chiaki_unaligned_uint16_t *)(buf + 0xa)));
 
-	if(buf_size != gap_ack_blocks_count * 4 + 0xc)
+	size_t expected_size = 0xc + ((size_t)gap_ack_blocks_count * 4) + ((size_t)dup_tsns_count * 4);
+	if(buf_size != expected_size)
 	{
-		CHIAKI_LOGW(takion->log, "Takion received data ack with invalid gap_ack_blocks_count");
+		CHIAKI_LOGW(takion->log,
+			"Takion received data ack with invalid block counts: size=%zx expected=%zx gaps=%u duplicates=%u",
+			buf_size, expected_size, gap_ack_blocks_count, dup_tsns_count);
 		return;
 	}
 
@@ -1653,8 +1699,52 @@ static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uin
 		return;
 	}
 
+	// Audio already has its own jitter-buffer path. Video needs packet reordering
+	// before a newer frame causes VideoReceiver to flush the preceding frame.
 	bool is_video = (base_type == TAKION_PACKET_TYPE_VIDEO);
-	if(!is_video)
+	if(is_video)
+	{
+		takion->diag_video_packets++;
+		takion->diag_video_bytes += buf_size;
+	}
+	else
+	{
+		takion->diag_audio_packets++;
+		takion->diag_audio_bytes += buf_size;
+	}
+	int64_t diag_now_us = chiaki_time_now_monotonic_us();
+	if(diag_now_us - takion->diag_av_last_us >= 1000000)
+	{
+		CHIAKI_LOGI(takion->log,
+			"Takion AV ingress: video=%llu packets/%llu bytes audio=%llu packets/%llu bytes",
+			(unsigned long long)takion->diag_video_packets,
+			(unsigned long long)takion->diag_video_bytes,
+			(unsigned long long)takion->diag_audio_packets,
+			(unsigned long long)takion->diag_audio_bytes);
+		takion->diag_video_packets = 0;
+		takion->diag_video_bytes = 0;
+		takion->diag_audio_packets = 0;
+		takion->diag_audio_bytes = 0;
+		takion->diag_av_last_us = diag_now_us;
+	}
+	// A long reorder window must not retain encrypted video. GKCrypt advances
+	// with newly received packets, so decrypt delayed packets while their key
+	// stream is current and only retain the plaintext payload.
+	if(takion->enable_crypt && takion->gkcrypt_remote)
+	{
+		err = chiaki_gkcrypt_decrypt(takion->gkcrypt_remote,
+			packet.key_pos + CHIAKI_GKCRYPT_BLOCK_SIZE, packet.data, packet.data_size);
+		if(err != CHIAKI_ERR_SUCCESS)
+		{
+			CHIAKI_LOGW(takion->log, "Takion failed to decrypt video before reordering");
+			free(buf);
+			return;
+		}
+		packet.data_decrypted = true;
+	}
+	// Senkusha MTU probes also use an AV-shaped packet with index zero. They must
+	// be dispatched immediately or the video reorder queue corrupts MTU probing.
+	if(!is_video || !takion->enable_crypt)
 	{
 		if(takion->cb)
 		{
@@ -1666,20 +1756,18 @@ static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uin
 		free(buf);
 		return;
 	}
+
 	ChiakiReorderQueue *queue = &takion->video_queue;
 	bool *initialized = &takion->video_queue_initialized;
 	int64_t *head_wait = &takion->video_queue_head_wait_start_us;
 	uint64_t *head_wait_seq_num = &takion->video_queue_head_wait_seq_num;
-	size_t size_exp = TAKION_AV_VIDEO_REORDER_QUEUE_SIZE_EXP;
-
 	if(!*initialized)
 	{
 		ChiakiSeqNum16 queue_begin = packet.packet_index;
-		if(packet.unit_index > 0)
+		if(is_video && packet.unit_index > 0)
 			queue_begin = (ChiakiSeqNum16)(packet.packet_index - packet.unit_index);
-		if(chiaki_reorder_queue_init_16(queue, size_exp, queue_begin) != CHIAKI_ERR_SUCCESS)
+		if(chiaki_reorder_queue_init_16(queue, TAKION_AV_VIDEO_REORDER_QUEUE_SIZE_EXP, queue_begin) != CHIAKI_ERR_SUCCESS)
 		{
-			// Fallback: dispatch immediately without reordering
 			if(takion->cb)
 			{
 				ChiakiTakionEvent event = { 0 };
