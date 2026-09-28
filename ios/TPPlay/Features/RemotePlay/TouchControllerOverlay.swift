@@ -182,19 +182,22 @@ struct TouchControllerOverlay: UIViewRepresentable {
     let resetToken: Int
     let presetID: UUID
     let revision: Int
+    let passesBackgroundTouches: Bool
 
     init(
         session: RemotePlaySession?,
         editing: Bool,
         resetToken: Int,
         presetID: UUID = TouchLayoutStore.shared.activePresetID,
-        revision: Int = TouchLayoutStore.shared.revision
+        revision: Int = TouchLayoutStore.shared.revision,
+        passesBackgroundTouches: Bool = false
     ) {
         self.session = session
         self.editing = editing
         self.resetToken = resetToken
         self.presetID = presetID
         self.revision = revision
+        self.passesBackgroundTouches = passesBackgroundTouches
     }
 
     func makeUIView(context: Context) -> TPVirtualControllerView {
@@ -204,7 +207,12 @@ struct TouchControllerOverlay: UIViewRepresentable {
     func updateUIView(_ view: TPVirtualControllerView, context: Context) {
         view.selectPreset(presetID, revision: revision)
         view.setEditing(editing)
+        view.passesBackgroundTouches = passesBackgroundTouches
         view.applyResetToken(resetToken)
+    }
+
+    static func dismantleUIView(_ view: TPVirtualControllerView, coordinator: ()) {
+        view.resetAllInteractions()
     }
 }
 
@@ -423,6 +431,8 @@ private final class TPControllerButtonView: UIView {
     private var symbolView: UIImageView?
     private let visualStyle: VisualStyle
     private var isDown = false
+    private weak var trackedTouch: UITouch?
+
 
     init(key: String, text: String, symbol: String? = nil) {
         layoutKey = key
@@ -491,7 +501,8 @@ private final class TPControllerButtonView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isDown else { return }
+        guard !isDown, trackedTouch == nil, let touch = touches.first else { return }
+        trackedTouch = touch
         isDown = true
         visiblePlate.backgroundColor = UIColor(red: 0.714, green: 1, blue: 0, alpha: 0.58)
         visiblePlate.transform = CGAffineTransform(scaleX: 0.97, y: 0.97)
@@ -501,10 +512,27 @@ private final class TPControllerButtonView: UIView {
         onPressed?(true)
     }
 
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { releaseButton() }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { releaseButton() }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard touches.contains(where: { $0 === trackedTouch }) else { return }
+        releaseButton()
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard touches.contains(where: { $0 === trackedTouch }) else { return }
+        releaseButton()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { releaseButton() }
+    }
+
+    func resetInteraction() {
+        releaseButton()
+    }
 
     private func releaseButton() {
+        trackedTouch = nil
         guard isDown else { return }
         isDown = false
         visiblePlate.backgroundColor = UIColor.white.withAlphaComponent(0.13)
@@ -519,10 +547,15 @@ private final class TPTouchpadView: UIView {
     let layoutKey = "touchpad"
     var onTouch: ((Bool, UInt16, UInt16) -> Void)?
     var onClick: ((UInt16, UInt16) -> Void)?
+    var onPress: ((Bool, UInt16, UInt16) -> Void)?
 
     private weak var trackedTouch: UITouch?
     private var startPoint = CGPoint.zero
-    private var startTime: TimeInterval = 0
+    private var holdTask: Task<Void, Never>?
+    private var isPressing = false
+    private var didSlide = false
+
+    deinit { holdTask?.cancel() }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -551,26 +584,48 @@ private final class TPTouchpadView: UIView {
         guard trackedTouch == nil, let touch = touches.first else { return }
         trackedTouch = touch
         startPoint = touch.location(in: self)
-        startTime = touch.timestamp
+        didSlide = false
+        isPressing = false
         backgroundColor = UIColor.white.withAlphaComponent(0.18)
         layer.borderColor = UIColor(red: 0.714, green: 1, blue: 0, alpha: 0.62).cgColor
         publish(touch, active: true)
+        // Allow an initial swipe without clicking the physical touchpad. Once
+        // a stationary hold is recognized, keep the click down until release.
+        holdTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(280))
+            guard !Task.isCancelled, let self,
+                  let touch = self.trackedTouch, !self.didSlide else { return }
+            self.isPressing = true
+            let coordinates = self.mappedCoordinates(for: touch.location(in: self))
+            self.onPress?(true, coordinates.0, coordinates.1)
+        }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first(where: { $0 === trackedTouch }) else { return }
+        let point = touch.location(in: self)
+        if hypot(point.x - startPoint.x, point.y - startPoint.y) >= 14 {
+            didSlide = true
+            holdTask?.cancel()
+            holdTask = nil
+        }
         publish(touch, active: true)
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first(where: { $0 === trackedTouch }) else { return }
         let end = touch.location(in: self)
-        let isTap = touch.timestamp - startTime < 0.28 && hypot(end.x - startPoint.x, end.y - startPoint.y) < 14
+        let isTap = !isPressing && !didSlide && hypot(end.x - startPoint.x, end.y - startPoint.y) < 14
         let coordinates = mappedCoordinates(for: end)
+        holdTask?.cancel()
+        holdTask = nil
         trackedTouch = nil
         backgroundColor = UIColor.white.withAlphaComponent(0.07)
         layer.borderColor = UIColor.white.withAlphaComponent(0.18).cgColor
-        if isTap {
+        if isPressing {
+            isPressing = false
+            onPress?(false, coordinates.0, coordinates.1)
+        } else if isTap {
             onClick?(coordinates.0, coordinates.1)
         } else {
             onTouch?(false, 0, 0)
@@ -578,10 +633,26 @@ private final class TPTouchpadView: UIView {
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        resetInteraction()
+    }
+
+    func resetInteraction() {
+        holdTask?.cancel()
+        holdTask = nil
         trackedTouch = nil
+        if isPressing {
+            isPressing = false
+            onPress?(false, 0, 0)
+        }
+        didSlide = false
         backgroundColor = UIColor.white.withAlphaComponent(0.07)
         layer.borderColor = UIColor.white.withAlphaComponent(0.18).cgColor
         onTouch?(false, 0, 0)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { resetInteraction() }
     }
 
     private func publish(_ touch: UITouch, active: Bool) {
@@ -597,6 +668,9 @@ private final class TPTouchpadView: UIView {
 }
 
 final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
+    // With a hardware controller, empty screen taps belong to overlay visibility,
+    // not the full-screen virtual-stick surfaces. Visible buttons remain usable.
+    var passesBackgroundTouches = false
     private weak var session: RemotePlaySession?
     private let layoutStore = TouchLayoutStore.shared
     private let leftStick = TPFloatingStickView()
@@ -608,6 +682,7 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
     private var loadedRevision = -1
     private var layout: StoredTouchLayout
     private var editing = false
+    private var layoutEditGestures: [UIGestureRecognizer] = []
     private var lastResetToken = 0
     private weak var editTarget: UIView?
     private var editKey: String?
@@ -628,6 +703,9 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
 
         touchpad.onTouch = { [weak session] active, x, y in session?.setTouch(active: active, x: x, y: y) }
         touchpad.onClick = { [weak session] x, y in session?.clickTouchpad(at: x, y: y) }
+        touchpad.onPress = { [weak session] pressed, x, y in
+            session?.setTouchpadPressed(pressed, x: x, y: y)
+        }
         addSubview(touchpad)
 
         addButton("dpadUp", "UP", "chevron.up", 1 << 6)
@@ -651,20 +729,40 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
         rebuildTouchpadActionButtons()
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(editPan(_:)))
-        pan.delegate = self
-        pan.cancelsTouchesInView = true
-        addGestureRecognizer(pan)
-
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(editPinch(_:)))
-        pinch.delegate = self
-        pinch.cancelsTouchesInView = true
-        addGestureRecognizer(pinch)
+        layoutEditGestures = [pan, pinch]
+        for gesture in layoutEditGestures {
+            gesture.delegate = self
+            gesture.cancelsTouchesInView = true
+            // Rejecting only in shouldBegin is too late: a possible edit gesture
+            // can otherwise delay a button's release while another finger is held.
+            gesture.delaysTouchesBegan = false
+            gesture.delaysTouchesEnded = false
+            gesture.isEnabled = false
+            addGestureRecognizer(gesture)
+        }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func applicationWillResignActive() {
+        resetAllInteractions()
+    }
+
     func selectPreset(_ id: UUID, revision: Int) {
         guard id != presetID || revision != loadedRevision else { return }
+        resetAllInteractions()
         presetID = id
         loadedRevision = revision
         layout = layoutStore.preset(id: id)?.layout ?? StoredTouchLayout()
@@ -690,13 +788,13 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
     func setEditing(_ editing: Bool) {
         guard self.editing != editing else { return }
         self.editing = editing
+        layoutEditGestures.forEach { $0.isEnabled = editing }
         leftStick.isUserInteractionEnabled = !editing
         rightLook.isUserInteractionEnabled = !editing
         touchpad.isUserInteractionEnabled = !editing
         (buttons + touchpadActionButtons.map { $0.1 }).forEach { $0.isUserInteractionEnabled = !editing }
         if editing {
-            leftStick.resetInteraction()
-            rightLook.resetInteraction()
+            resetAllInteractions()
         } else {
             editTarget = nil
             editKey = nil
@@ -796,7 +894,10 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
     }
 
     private func rebuildTouchpadActionButtons() {
-        touchpadActionButtons.forEach { $0.1.removeFromSuperview() }
+        touchpadActionButtons.forEach {
+            $0.1.resetInteraction()
+            $0.1.removeFromSuperview()
+        }
         touchpadActionButtons.removeAll()
         guard layout.resolvedTouchpadMode == .actions else { return }
 
@@ -806,11 +907,11 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
                 guard let session else { return }
                 switch action {
                 case .click:
-                    if pressed { session.clickTouchpad() }
+                    session.setTouchpadPressed(pressed)
                 case .lowerLeftClick:
-                    if pressed { session.clickTouchpad(at: 360, y: 790) }
+                    session.setTouchpadPressed(pressed, x: 360, y: 790)
                 case .lowerRightClick:
-                    if pressed { session.clickTouchpad(at: 1_560, y: 790) }
+                    session.setTouchpadPressed(pressed, x: 1_560, y: 790)
                 case .swipeLeft:
                     if pressed { session.performTouchpadSwipe(from: (1_520, 470), to: (400, 470)) }
                 case .swipeRight:
@@ -829,6 +930,20 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
         updateEditingAppearance()
     }
 
+    func resetAllInteractions() {
+        leftStick.resetInteraction()
+        rightLook.resetInteraction()
+        touchpad.resetInteraction()
+        buttons.forEach { $0.resetInteraction() }
+        touchpadActionButtons.forEach { $0.1.resetInteraction() }
+        session?.resetVirtualControllerInputs()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { resetAllInteractions() }
+    }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard !isHidden, alpha > 0.01, isUserInteractionEnabled, bounds.contains(point) else { return nil }
         guard !editing else { return self }
@@ -843,6 +958,7 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
         }) {
             return nearest.1
         }
+        if passesBackgroundTouches { return nil }
         return point.x < bounds.midX ? leftStick : rightLook
     }
 
@@ -913,6 +1029,10 @@ final class TPVirtualControllerView: UIView, UIGestureRecognizerDelegate {
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        editing
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         editing
     }
 

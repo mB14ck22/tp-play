@@ -12,6 +12,7 @@ struct StreamConfiguration: Sendable {
 
 @MainActor
 final class RemotePlaySession: ObservableObject {
+    static weak var diagnosticSession: RemotePlaySession?
     enum ConnectionStage: Int32, Equatable {
         case contacting = 1
         case authenticating = 2
@@ -43,6 +44,7 @@ final class RemotePlaySession: ObservableObject {
     private var teardownTask: Task<Void, Never>?
     private var streamHealthTask: Task<Void, Never>?
     private var isStopped = false
+    private var homeGestureOverrides: [ObjectIdentifier: (GCControllerButtonInput, GCControllerElement.SystemGestureState)] = [:]
     private var didReportConnection = false
     private var lastVideoRecoveryNanoseconds: UInt64 = 0
     private let onConnected: (() -> Void)?
@@ -79,6 +81,11 @@ final class RemotePlaySession: ObservableObject {
             }
         }
 
+        guard !LinkDiagnosticModel.isTesting else {
+            state = .ended("Stop the link diagnostic before starting Remote Play.")
+            return
+        }
+        Self.diagnosticSession = self
         if let remote {
             preparationTask = Task { [weak self] in
                 let prepared = await Task.detached(priority: .userInitiated) {
@@ -222,6 +229,11 @@ final class RemotePlaySession: ObservableObject {
         }
 
         isStopped = true
+        for (_, override) in homeGestureOverrides {
+            override.0.preferredSystemGestureState = override.1
+            override.0.pressedChangedHandler = nil
+        }
+        homeGestureOverrides.removeAll()
         preparationTask?.cancel()
         touchpadGestureTask?.cancel()
         streamHealthTask?.cancel()
@@ -371,6 +383,12 @@ final class RemotePlaySession: ObservableObject {
         sendController()
     }
 
+    func resetVirtualControllerInputs() {
+        cancelTouchpadGesture()
+        controller = TPPlayControllerState()
+        sendController()
+    }
+
     func setTouch(active: Bool, x: UInt16 = 0, y: UInt16 = 0) {
         controller.touch_active = active
         controller.touch_x = x
@@ -384,6 +402,17 @@ final class RemotePlaySession: ObservableObject {
             try? await Task.sleep(for: .milliseconds(90))
             self?.setButton(1 << 14, pressed: false)
         }
+    }
+
+    func setTouchpadPressed(_ pressed: Bool, x: UInt16 = 960, y: UInt16 = 470) {
+        // Cancel any prior synthesized tap so its delayed release cannot cut
+        // short a new hold. Surface coordinates and click are one input update.
+        cancelTouchpadGesture()
+        controller.touch_active = pressed
+        controller.touch_x = pressed ? x : 0
+        controller.touch_y = pressed ? y : 0
+        if pressed { controller.buttons |= 1 << 14 }
+        sendController()
     }
 
     func clickTouchpad(at x: UInt16, y: UInt16) {
@@ -446,7 +475,20 @@ final class RemotePlaySession: ObservableObject {
     }
 
     func attach(_ gameController: GCController) {
+        guard !isStopped else { return }
         guard let gamepad = gameController.extendedGamepad else { return }
+        if let home = gamepad.buttonHome {
+            let id = ObjectIdentifier(gameController)
+            if homeGestureOverrides[id] == nil {
+                homeGestureOverrides[id] = (home, home.preferredSystemGestureState)
+            }
+            // Game-streaming clients need the press/release, not iOS's Home
+            // gesture arbitration. The OS may still reserve some gestures.
+            home.preferredSystemGestureState = .disabled
+            print("[TPPLAY-CONTROLLER] PS/Home mapped; systemGestureBound=\(home.isBoundToSystemGesture)")
+        } else {
+            print("[TPPLAY-CONTROLLER] Controller does not expose a PS/Home input")
+        }
         bind(gamepad.buttonA, mask: 1 << 0)
         bind(gamepad.buttonB, mask: 1 << 1)
         bind(gamepad.buttonX, mask: 1 << 2)
@@ -508,6 +550,10 @@ final class RemotePlaySession: ObservableObject {
     }
 
     func detach(_ gameController: GCController) {
+        if let override = homeGestureOverrides.removeValue(forKey: ObjectIdentifier(gameController)) {
+            override.0.preferredSystemGestureState = override.1
+            override.0.pressedChangedHandler = nil
+        }
         guard gameController.extendedGamepad != nil else { return }
         controller = TPPlayControllerState()
         sendController()
@@ -515,7 +561,11 @@ final class RemotePlaySession: ObservableObject {
 
     private func bind(_ input: GCControllerButtonInput?, mask: UInt32) {
         input?.pressedChangedHandler = { [weak self] _, _, pressed in
-            Task { @MainActor in self?.setButton(mask, pressed: pressed) }
+            Task { @MainActor in
+                guard let self, !self.isStopped else { return }
+                if mask == 1 << 15 { print("[TPPLAY-CONTROLLER] PS/Home pressed=\(pressed)") }
+                self.setButton(mask, pressed: pressed)
+            }
         }
     }
 

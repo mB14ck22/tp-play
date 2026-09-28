@@ -31,8 +31,11 @@ struct RemotePlayView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     guard hasExternalController else { return }
+                    guard !isEditingTouchLayout, !isChoosingTouchLayout,
+                          !showsExitConfirmation, !showsNewPresetDialog else { return }
                     withAnimation(.easeInOut(duration: 0.18)) {
                         showsVirtualControls.toggle()
+                        if !showsVirtualControls { showsSessionMenu = false }
                     }
                 }
 
@@ -170,6 +173,7 @@ struct RemotePlayView: View {
         if connected {
             isEditingTouchLayout = false
             isChoosingTouchLayout = false
+            showsSessionMenu = false
         }
         withAnimation(.easeInOut(duration: 0.18)) {
             showsVirtualControls = !connected
@@ -200,7 +204,8 @@ struct RemotePlayView: View {
                     editing: isEditingTouchLayout,
                     resetToken: touchLayoutResetToken,
                     presetID: touchLayouts.activePresetID,
-                    revision: touchLayouts.revision
+                    revision: touchLayouts.revision,
+                    passesBackgroundTouches: hasExternalController
                 )
                 .ignoresSafeArea()
                 .transition(.opacity)
@@ -211,8 +216,9 @@ struct RemotePlayView: View {
 
                 if isEditingTouchLayout {
                     layoutEditingBar
-                } else {
+                } else if showsVirtualControls {
                     sessionMenu
+                        .transition(.opacity)
                 }
             }
 
@@ -262,8 +268,8 @@ struct RemotePlayView: View {
                     }
                 }
                 .frame(width: 282, height: 48)
-                .background(TPPlayTheme.surface.opacity(0.92))
-                .overlay { Rectangle().stroke(TPPlayTheme.violet, lineWidth: 1) }
+                .background(TPPlayTheme.surface.opacity(0.35))
+                .overlay { Rectangle().stroke(TPPlayTheme.violet.opacity(0.4), lineWidth: 1) }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
@@ -274,10 +280,12 @@ struct RemotePlayView: View {
             } label: {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 15, weight: .black))
-                    .foregroundStyle(showsSessionMenu ? TPPlayTheme.onAccent : TPPlayTheme.primaryText.opacity(0.82))
+                    .foregroundStyle(showsSessionMenu ? TPPlayTheme.accent.opacity(0.8) : TPPlayTheme.primaryText.opacity(0.55))
                     .frame(width: 58, height: 30)
-                    .background(showsSessionMenu ? TPPlayTheme.accent : TPPlayTheme.surface.opacity(0.72))
-                    .overlay { Rectangle().stroke(showsSessionMenu ? TPPlayTheme.accent : TPPlayTheme.violet.opacity(0.86), lineWidth: 1) }
+                    .background(TPPlayTheme.primaryText.opacity(showsSessionMenu ? 0.2 : 0.13))
+                    .overlay { Rectangle().stroke(TPPlayTheme.violet.opacity(0.25), lineWidth: 1) }
+                    .frame(width: 58, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(showsSessionMenu ? "Close session controls" : "Open session controls")

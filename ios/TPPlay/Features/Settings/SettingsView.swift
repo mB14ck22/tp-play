@@ -10,6 +10,7 @@ struct HomeView: View {
     @AppStorage("streamFPS") private var fps = 60
     @AppStorage("streamBitrate") private var bitrate = 15_000
     @State private var showingTouchLayouts = false
+    @State private var showingLinkDiagnostic = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,9 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 24) {
                 psnAccountPanel
                 touchControlsPanel
+                Button("LINK DIAGNOSTIC // 串流链路测试 >") { showingLinkDiagnostic = true }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .buttonStyle(AcidButtonStyle())
                 VStack(alignment: .leading, spacing: 18) {
                     configHeader("STREAM PROFILE", value: "\(resolution)P / \(fps)FPS")
                     choiceRow("RESOLUTION", choices: [("720P", 720), ("1080P", 1080)], selection: $resolution)
@@ -81,6 +85,9 @@ struct HomeView: View {
         .background(TPPlayTheme.canvas)
         .fullScreenCover(isPresented: $showingTouchLayouts) {
             TouchLayoutSettingsView()
+        }
+        .fullScreenCover(isPresented: $showingLinkDiagnostic) {
+            LinkDiagnosticView()
         }
     }
 

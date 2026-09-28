@@ -34,6 +34,7 @@
 		100000000000000000000018 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001D /* LibraryView.swift */; };
 		100000000000000000000019 /* PSNLibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001E /* PSNLibraryStore.swift */; };
 		10000000000000000000001B /* TouchLayoutSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000020 /* TouchLayoutSettingsView.swift */; };
+		10000000000000000000001C /* LinkDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000021 /* LinkDiagnostic.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -69,6 +70,7 @@
 		20000000000000000000001E /* PSNLibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PSNLibraryStore.swift; sourceTree = "<group>"; };
 		20000000000000000000001F /* TouchControllerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControllerOverlay.swift; sourceTree = "<group>"; };
 		200000000000000000000020 /* TouchLayoutSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchLayoutSettingsView.swift; sourceTree = "<group>"; };
+		200000000000000000000021 /* LinkDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkDiagnostic.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -218,6 +220,7 @@
 			children = (
 				200000000000000000000015 /* SettingsView.swift */,
 				200000000000000000000020 /* TouchLayoutSettingsView.swift */,
+				200000000000000000000021 /* LinkDiagnostic.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -368,6 +371,7 @@
 				100000000000000000000018 /* LibraryView.swift in Sources */,
 				100000000000000000000019 /* PSNLibraryStore.swift in Sources */,
 				10000000000000000000001B /* TouchLayoutSettingsView.swift in Sources */,
+				10000000000000000000001C /* LinkDiagnostic.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

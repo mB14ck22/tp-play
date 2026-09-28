@@ -11,7 +11,9 @@ final class AudioPlayer: @unchecked Sendable {
     private static let outputBufferMilliseconds = 10
     private static let outputBufferCount = 3
     private static let recoveryBufferMilliseconds = 60
-    private static let maximumBacklogMilliseconds = 500
+    // Keep the existing 60 ms underrun recovery cushion, but never replay half
+    // a second of obsolete sound after a network burst.
+    private static let maximumBacklogMilliseconds = 120
 
     private let lock = NSLock()
     private var queue: AudioQueueRef?

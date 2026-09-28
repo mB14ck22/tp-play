@@ -5,9 +5,9 @@
 #define CONGESTION_CONTROL_INTERVAL_MS 200
 #define CONGESTION_RECOVERY_ENTER_LOSS 0.20
 #define CONGESTION_RECOVERY_EXIT_LOSS 0.02
-#define CONGESTION_RECOVERY_MAX_LOSS 0.20
 #define CONGESTION_RECOVERY_ENTER_SAMPLES 3
-#define CONGESTION_RECOVERY_EXIT_SAMPLES 10
+#define CONGESTION_RECOVERY_EXIT_SAMPLES 5
+#define CONGESTION_RECOVERY_PULSE_INTERVAL_SAMPLES 5
 
 static void *congestion_control_thread_func(void *user)
 {
@@ -31,11 +31,12 @@ static void *congestion_control_thread_func(void *user)
 		uint64_t total = received + lost;
 		control->packet_loss = total > 0 ? (double)lost / total : 0;
 
-		/* A short burst should not permanently lower stream quality, but keeping
-		 * the normal 5% cap during sustained 40-90% loss prevents the console
-		 * from backing off and makes IDR recovery packets compete with the same
-		 * overloaded stream. Enter recovery only after three bad intervals and
-		 * leave it only after two seconds of clean delivery (hysteresis). */
+		/* Keep the configured quality ceiling during healthy delivery. If a
+		 * sustained burst is clearly starving video, pulse a stronger report at
+		 * most once per second. Reporting it every 200 ms makes the console apply
+		 * several reductions before the path can react and overshoots to its
+		 * minimum bitrate. */
+		bool recovery_pulse = false;
 		if(total > 0 && control->packet_loss >= CONGESTION_RECOVERY_ENTER_LOSS)
 		{
 			control->severe_loss_samples++;
@@ -43,12 +44,25 @@ static void *congestion_control_thread_func(void *user)
 			if(!control->recovery_mode && control->severe_loss_samples >= CONGESTION_RECOVERY_ENTER_SAMPLES)
 			{
 				control->recovery_mode = true;
+				control->recovery_cooldown_samples = 0;
 				CHIAKI_LOGW(control->takion->log, "Congestion recovery enabled after sustained packet loss");
+			}
+			if(control->recovery_mode)
+			{
+				if(control->recovery_cooldown_samples == 0)
+				{
+					recovery_pulse = true;
+					control->recovery_cooldown_samples = CONGESTION_RECOVERY_PULSE_INTERVAL_SAMPLES - 1;
+				}
+				else
+					control->recovery_cooldown_samples--;
 			}
 		}
 		else
 		{
 			control->severe_loss_samples = 0;
+			if(control->recovery_cooldown_samples > 0)
+				control->recovery_cooldown_samples--;
 			if(control->recovery_mode && total > 0 && control->packet_loss <= CONGESTION_RECOVERY_EXIT_LOSS)
 			{
 				control->recovery_samples++;
@@ -56,6 +70,7 @@ static void *congestion_control_thread_func(void *user)
 				{
 					control->recovery_mode = false;
 					control->recovery_samples = 0;
+					control->recovery_cooldown_samples = 0;
 					CHIAKI_LOGI(control->takion->log, "Congestion recovery disabled after stable delivery");
 				}
 			}
@@ -63,18 +78,15 @@ static void *congestion_control_thread_func(void *user)
 				control->recovery_samples = 0;
 		}
 
-		double reported_loss = control->packet_loss;
-		double reported_loss_max = control->recovery_mode
-			? CONGESTION_RECOVERY_MAX_LOSS
-			: control->packet_loss_max;
-		if(reported_loss > reported_loss_max)
-			reported_loss = reported_loss_max;
+		double reported_loss = chiaki_congestion_control_reported_loss(
+			control->packet_loss, control->packet_loss_max, recovery_pulse);
 		if(control->sample_count++ % 5 == 0)
 			CHIAKI_LOGI(control->takion->log,
-				"Congestion feedback: received=%llu lost=%llu measured_loss=%.1f%% reported_loss=%.1f%% recovery=%s",
+				"Congestion feedback: received=%llu lost=%llu measured_loss=%.1f%% reported_loss=%.1f%% recovery=%s pulse=%s",
 				(unsigned long long)received, (unsigned long long)lost,
 				control->packet_loss * 100.0, reported_loss * 100.0,
-				control->recovery_mode ? "on" : "off");
+				control->recovery_mode ? "on" : "off",
+				recovery_pulse ? "yes" : "no");
 		lost = (uint64_t)((double)total * reported_loss);
 		received = total - lost;
 		packet.received = (uint16_t)received;
@@ -97,6 +109,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_congestion_control_start(ChiakiCongestionCo
 	control->sample_count = 0;
 	control->severe_loss_samples = 0;
 	control->recovery_samples = 0;
+	control->recovery_cooldown_samples = 0;
 	control->recovery_mode = false;
 
 	ChiakiErrorCode err = chiaki_bool_pred_cond_init(&control->stop_cond);

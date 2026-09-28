@@ -490,9 +490,10 @@ static TPPlaySession *tp_play_session_create_common(
 	info.video_profile.codec = (ChiakiCodec)codec;
 	info.video_profile_auto_downgrade = true;
 	info.enable_dualsense = true;
-	/* Keep parity overhead bounded on routed/mobile paths. Reporting very high
-	 * transient loss can add enough FEC traffic to prolong the congestion. */
-	info.packet_loss_max = 0.05;
+	/* Prioritize interaction latency: do not disguise overload as 5% loss to
+	 * preserve picture quality. The console receives measured delivery loss
+	 * and remains responsible for adapting within the requested bitrate. */
+	info.packet_loss_max = 1.0;
 	info.enable_idr_on_fec_failure = true;
 
 	ChiakiErrorCode error = chiaki_session_init(&result->session, &info, &result->log);

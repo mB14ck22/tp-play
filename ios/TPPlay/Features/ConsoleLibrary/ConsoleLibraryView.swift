@@ -320,10 +320,9 @@ struct ConsoleLibraryView: View {
             console: console,
             configuration: streamConfiguration,
             remote: remote,
-            // Manual addresses are commonly routed over a WAN/VPN path. Give
-            // those sessions a short A/V startup cushion, while preserving the
-            // configured bitrate and LAN/AUTO's immediate low-latency playback.
-            startupBufferMilliseconds: manualAddress == nil ? 0 : 250,
+            // Interactive latency takes priority on every route. A fixed FIFO
+            // cushion persists after startup and delays visible input feedback.
+            startupBufferMilliseconds: 0,
             onConnected: {
                 guard let manualAddress else { return }
                 manualConnections.recordSuccessfulAddress(manualAddress, for: console)
